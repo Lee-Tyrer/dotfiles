@@ -1,0 +1,11 @@
+[core]
+  editor = vim
+
+[fetch]
+  prune = true
+
+[push]
+  default = simple
+
+[init]
+  defaultBranch = main
