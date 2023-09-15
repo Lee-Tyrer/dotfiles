@@ -1,1 +1,2 @@
-Dot files for my system
+# Getting started
+
