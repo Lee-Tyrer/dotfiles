@@ -110,3 +110,6 @@ export PATH="$PATH:/home/leetyrer/.local/bin"
 
 # Create shortcut to Neovim config
 alias cn="cd ~/.config/nvim && nvim ."
+
+export NVM_DIR="/home/leetyrer/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"  # This loads nvm
