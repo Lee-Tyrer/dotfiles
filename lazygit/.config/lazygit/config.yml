@@ -1,0 +1,3 @@
+os:
+  editCommand: "vi"
+  editCommandTemplate: '{{editor}} "$(pwd)/{{filename}}"'

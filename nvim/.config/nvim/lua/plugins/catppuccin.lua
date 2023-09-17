@@ -1,6 +1,7 @@
 return {
   {
     "catppuccin/nvim",
+    name = "catppuccin",
   },
   {
     "LazyVim/LazyVim",
