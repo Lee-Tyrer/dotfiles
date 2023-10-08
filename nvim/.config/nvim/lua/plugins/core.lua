@@ -14,7 +14,16 @@ return {
   {
     "williamboman/mason.nvim",
     opts = {
-      ensure_installed = { "pyright", "mypy", "black" },
+      ensure_installed = { "pyright", "black" },
+    },
+  },
+  -- non-LSP hooks for the LSP clients
+  {
+    "jose-elias-alvarez/null-ls.nvim",
+    opts = {
+      sources = {
+        require("null-ls").builtins.formatting.black,
+      },
     },
   },
   -- LSP functionality
@@ -35,16 +44,16 @@ return {
             },
           },
         },
-        setup = {
-          ruff_lsp = function()
-            require("lazyvim.util").on_attach(function(client, _)
-              if client.name == "ruff_lsp" then
-                -- Disable hover in favour of Pyright
-                client.server_capabilities.hoverProvider = false
-              end
-            end)
-          end,
-        },
+      },
+      setup = {
+        ruff_lsp = function()
+          require("lazyvim.util").on_attach(function(client, _)
+            if client.name == "ruff_lsp" then
+              -- Disable hover in favour of Pyright
+              client.server_capabilities.hoverProvider = false
+            end
+          end)
+        end,
       },
     },
   },
@@ -55,5 +64,22 @@ return {
     config = true,
     version = "*",
     keys = { { "<leader>cc", ":lua require('neogen').generate()<CR>", desc = "Generate docstring" } },
+  },
+  -- Modify telescope features
+  {
+    "nvim-telescope/telescope.nvim",
+    dependencies = { "nvim-lua/plenary.nvim" },
+    keys = {
+      {
+        "<leader>fh",
+        ":lua require('telescope.builtin').find_files({find_command = {'rg', '--files', '--hidden', '-g', '!.git'}})<CR>",
+        desc = "Find files (hidden)",
+      },
+    },
+    opts = {
+      defaults = {
+        path_display = { "smart" },
+      },
+    },
   },
 }
