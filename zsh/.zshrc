@@ -75,7 +75,7 @@ ZSH_THEME="robbyrussell"
 # Custom plugins may be added to $ZSH_CUSTOM/plugins/
 # Example format: plugins=(rails git textmate ruby lighthouse)
 # Add wisely, as too many plugins slow down shell startup.
-plugins=(git zsh-autosuggestions zsh-syntax-highlighting fast-syntax-highlighting zsh-autocomplete pyenv)
+plugins=(git zsh-autosuggestions zsh-syntax-highlighting fast-syntax-highlighting zsh-autocomplete pyenv docker)
 
 source $ZSH/oh-my-zsh.sh
 
@@ -110,6 +110,11 @@ export PATH="$PATH:/home/leetyrer/.local/bin"
 
 # Create shortcut to Neovim config
 alias cn="cd ~/.config/nvim && nvim ."
+alias bb="cd ~/dev/beastball/services/ && nvim"
 
 export NVM_DIR="/home/leetyrer/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"  # This loads nvm
+
+
+# Autoload of aws completion
+complete -C '/usr/local/bin/aws_completer' aws
