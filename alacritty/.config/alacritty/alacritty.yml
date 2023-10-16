@@ -2,5 +2,8 @@ font:
   normal:
     family: FiraCode Nerd Font
   size: 13
+  offset:
+    x: 0
+    y: 3
 import:
   - ~/.config/alacritty/catppuccin/catppuccin-frappe.yml
