@@ -19,12 +19,13 @@ return {
   },
   -- non-LSP hooks for the LSP clients
   {
-    "jose-elias-alvarez/null-ls.nvim",
-    opts = {
-      sources = {
-        require("null-ls").builtins.formatting.black,
-      },
-    },
+    "nvimtools/none-ls.nvim",
+    opts = function(_, opts)
+      local nls = require("null-ls")
+      opts.sources = vim.list_extend(opts.source or {}, {
+        nls.builtins.formatting.black,
+      })
+    end,
   },
   -- LSP functionality
   {
@@ -33,6 +34,11 @@ return {
       servers = {
         ruff_lsp = {},
         pyright = {
+          capabilities = (function() -- disable pyright diagnostics (using ruff instead)
+            local capabilities = vim.lsp.protocol.make_client_capabilities()
+            capabilities.textDocument.publishDiagnostics.tagSupport.valueSet = { 2 }
+            return capabilities
+          end)(),
           settings = {
             python = {
               analysis = {
@@ -40,6 +46,9 @@ return {
                 typeCheckingMode = "basic",
                 diagnosticMode = "openFilesOnly",
                 useLibraryCodeForTypes = true,
+                diagnosticSeverityOverrides = {
+                  reportUnusedVariable = "warning",
+                },
               },
             },
           },
@@ -47,7 +56,7 @@ return {
       },
       setup = {
         ruff_lsp = function()
-          require("lazyvim.util").on_attach(function(client, _)
+          require("lazyvim.util").lsp.on_attach(function(client, _)
             if client.name == "ruff_lsp" then
               -- Disable hover in favour of Pyright
               client.server_capabilities.hoverProvider = false
@@ -82,4 +91,15 @@ return {
       },
     },
   },
+  {
+    "L3MON4D3/LuaSnip",
+    -- follow latest release.
+    version = "v2.*", -- Replace <CurrentMajor> by the latest released major (first number of latest release)
+    -- install jsregexp (optional!).
+    build = "make install_jsregexp",
+  },
+  -- {
+  --   "luk400/vim-jukit",
+  --   ft = { "python", "jupyter", "ipynb" }
+  -- }
 }
