@@ -8,6 +8,12 @@ fi
 # Profile start up with zprof
 # zmodload zsh/zprof
 
+# Load neovim
+export PATH="$PATH:/opt/nvim-linux64/bin"
+
+# Create go path
+export PATH=$PATH:/$HOME/go/bin/
+
 # If you come from bash you might have to change your $PATH.
 # export PATH=$HOME/bin:/usr/local/bin:$PATH
 export NVM_LAZY_LOAD=true
@@ -15,10 +21,24 @@ export NVM_LAZY_LOAD=true
 # Path to your oh-my-zsh installation.
 export ZSH="$HOME/.oh-my-zsh"
 
-# Initialise pyenv 
+# Lazy initialise pyenv 
 export PYENV_ROOT="$HOME/.pyenv"
-export PATH="$PYENV_ROOT/bin:$PATH"
-eval "$(pyenv init --path)"
+if ! type pyenv > /dev/null && [ -f "${PYENV_ROOT}/bin/pyenv" ]; then
+  export PATH="${PYENV_ROOT}/bin:${PATH}"
+fi
+if type pyenv > /dev/null; then
+  export PATH="${PYENV_ROOT}/bin:${PYENV_ROOT}/shims:${PATH}"
+  function pyenv() {
+    unset -f pyenv
+    eval "$(command pyenv init -)"
+    eval "$(command pyenv virtualenv-init -)"
+    pyenv $@
+  }
+fi
+
+# export PATH="$PYENV_ROOT/bin:$PATH"
+# export PATH="$PATH:/usr/local/go/bin"
+# eval "$(pyenv init --path)"
 
 # Set name of the theme to load --- if set to "random", it will
 # load a random theme each time oh-my-zsh is loaded, in which case,
@@ -86,7 +106,7 @@ ZSH_THEME="powerlevel10k/powerlevel10k"
 # Custom plugins may be added to $ZSH_CUSTOM/plugins/
 # Example format: plugins=(rails git textmate ruby lighthouse)
 # Add wisely, as too many plugins slow down shell startup.
-plugins=(git zsh-autosuggestions zsh-syntax-highlighting fast-syntax-highlighting zsh-autocomplete pyenv docker docker-compose zsh-nvm)
+plugins=(git zsh-autosuggestions zsh-syntax-highlighting fast-syntax-highlighting zsh-autocomplete docker docker-compose zsh-nvm)
 
 source $ZSH/oh-my-zsh.sh
 
@@ -122,6 +142,7 @@ export PATH="$PATH:/home/leetyrer/.local/bin"
 # Create shortcut to Neovim config
 alias cn="cd ~/.config/nvim && nvim ."
 alias bb="cd ~/dev/beastball/services/"
+alias vim="nvim"
 
 # export NVM_DIR="/home/leetyrer/.nvm"
 # [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"  # This loads nvm
@@ -132,6 +153,11 @@ complete -C '/usr/local/bin/aws_completer' aws
 
 # Autoload of docker plugin
 autoload -U compinit && compinit
+
+# load old style docker completion
+zstyle ':omz:plugins:docker' legacy-completion yes
+# zstyle ':completion:*:*:docker:*' option-stacking yes
+# zstyle ':completion:*:*:docker-:*:' option-stacking yes
 
 # Have kitty always start a unique socket to listen on for neovim plugin jukit
 alias jukit_kitty="kitty --listen-on=unix:@"$(date + $s$N)" -o allow_remote_control=yes"
