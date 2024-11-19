@@ -4,8 +4,8 @@ font:
   size: 15
   offset:
     x: 0
-    y: 3
+    y: 2
 # window:
 #   opacity: 0.99
 import:
-  - ~/.config/alacritty/catppuccin/catppuccin-frappe.yml
+  - ~/.config/alacritty/catppuccin/catppuccin-mocha.yml

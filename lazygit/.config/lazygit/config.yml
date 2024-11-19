@@ -1,3 +1,40 @@
 os:
   editCommand: "vi"
   editCommandTemplate: '{{editor}} "$(pwd)/{{filename}}"'
+gui:
+  scrollHeight: 10
+  scrollPastBottom: true
+  scrollOffMargin: 2
+  scrollOffBehavior: margin
+  mouseEvents: true
+  skipDiscardChangeWarning: false
+  skipStashWarning: false
+  skipNoStagedFilesWarning: false
+  skipRewordInEditorWarning: false
+  sidePanelWidth: 0.3333
+  expandFocusedSidePanel: false
+  expandedSidePanelWeight: 2
+  mainPanelSplitMode: flexible
+  enlargedSideViewLocation: left
+  language: auto
+  showListFooter: true
+  showFileTree: true
+  showRandomTip: true
+  showCommandLog: true
+  showBottomLine: true
+  showPanelJumps: true
+  showIcons: false
+  showFileIcons: true
+  commitAuthorShortLength: 2
+  commitAuthorLongLength: 17
+  commitHashLength: 8
+  showBranchCommitHash: false
+  showDivergenceFromBaseBranch: none
+  commandLogSize: 8
+  splitDiff: auto
+  windowSize: normal
+  border: rounded
+  animateExplosion: true
+  portraitMode: auto
+  filterMode: substring
+  statusPanelView: dashboard
