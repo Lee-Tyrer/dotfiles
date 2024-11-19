@@ -3,66 +3,59 @@ return {
   {
     "catppuccin/nvim",
     name = "catppuccin",
+    opts = {
+      color_overrides = {
+        machiatto = {
+          -- base = "#0e0e0e", -- black
+          -- mantle = "#0e0e0e", -- black
+          -- crust = "#000000",
+        },
+      },
+      transparent_background = false,
+      term_colors = true,
+    },
   },
   {
     "LazyVim/LazyVim",
     opts = {
-      colorscheme = "catppuccin-frappe",
+      colorscheme = "catppuccin-mocha",
     },
   },
   -- Ensure mason has packages installed
   {
     "williamboman/mason.nvim",
     opts = {
-      ensure_installed = { "pyright", "black" },
+      ensure_installed = { "pyright", "black", "ruff" },
     },
+  },
+  -- Conform
+  {
+    "stevearc/conform.nvim",
+    opts = function(_, opts)
+      opts.formatters_by_ft["htmldjango"] = { "djlint" }
+      opts.formatters_by_ft["html"] = { "djlint" }
+    end,
   },
   -- non-LSP hooks for the LSP clients
   {
     "nvimtools/none-ls.nvim",
-    opts = function(_, opts)
-      local nls = require("null-ls")
-      opts.sources = vim.list_extend(opts.source or {}, {
-        nls.builtins.formatting.black,
-      })
-    end,
   },
   -- LSP functionality
   {
     "neovim/nvim-lspconfig",
     opts = {
+      inlay_hints = { enabled = false },
+      -- inlay_hints = { enabled = true },
       servers = {
-        ruff_lsp = {},
-        pyright = {
-          capabilities = (function() -- disable pyright diagnostics (using ruff instead)
-            local capabilities = vim.lsp.protocol.make_client_capabilities()
-            capabilities.textDocument.publishDiagnostics.tagSupport.valueSet = { 2 }
-            return capabilities
-          end)(),
-          settings = {
-            python = {
-              analysis = {
-                autoImportCompletions = true,
-                typeCheckingMode = "basic",
-                diagnosticMode = "openFilesOnly",
-                useLibraryCodeForTypes = true,
-                diagnosticSeverityOverrides = {
-                  reportUnusedVariable = "warning",
-                },
-              },
-            },
+        html = {
+          filetypes = { "html", "htmldjango" },
+          init_options = {
+            provideFormatter = false,
           },
         },
-      },
-      setup = {
-        ruff_lsp = function()
-          require("lazyvim.util").lsp.on_attach(function(client, _)
-            if client.name == "ruff_lsp" then
-              -- Disable hover in favour of Pyright
-              client.server_capabilities.hoverProvider = false
-            end
-          end)
-        end,
+        jinja_lsp = {
+          filetypes = { "htmldjango", "html" },
+        },
       },
     },
   },
@@ -88,18 +81,43 @@ return {
     opts = {
       defaults = {
         path_display = { "smart" },
+        layout_config = {
+          horizontal = {
+            preview_cutoff = 0,
+          },
+        },
+      },
+      pickers = {
+        colorscheme = {
+          enable_preview = true,
+        },
       },
     },
   },
   {
-    "L3MON4D3/LuaSnip",
-    -- follow latest release.
-    version = "v2.*", -- Replace <CurrentMajor> by the latest released major (first number of latest release)
-    -- install jsregexp (optional!).
-    build = "make install_jsregexp",
+    "folke/which-key.nvim",
+    opts = {
+      icons = {
+        mappings = false,
+      },
+    },
   },
-  -- {
-  --   "luk400/vim-jukit",
-  --   ft = { "python", "jupyter", "ipynb" }
-  -- }
+  {
+    "otavioschwanck/arrow.nvim",
+    opts = {
+      show_icons = true,
+      leader_key = ";",
+      buffer_leader_key = "m",
+      per_buffer_config = {
+        lines = 10,
+        sort_automatically = true,
+      },
+    },
+  },
+  {
+    "folke/snacks.nvim",
+    opts = {
+      dashboard = { enabled = true },
+    },
+  },
 }
