@@ -18,7 +18,7 @@ return {
   {
     "LazyVim/LazyVim",
     opts = {
-      colorscheme = "catppuccin-mocha",
+      colorscheme = "kanso-ink",
     },
   },
   -- Ensure mason has packages installed
@@ -117,7 +117,19 @@ return {
   {
     "folke/snacks.nvim",
     opts = {
-      dashboard = { enabled = true },
+      dashboard = {
+        enabled = true,
+        sections = {
+          { section = "keys", title = "Keys", padding = 1 },
+          { section = "recent_files", title = "Recent Files", indent = 1, padding = 1 },
+          { section = "projects", title = "Projects", indent = 1, padding = 1 },
+        },
+      },
+      indent = { animate = { duration = 0 } },
+      scroll = { enabled = false },
     },
+  },
+  {
+    "webhooked/kanso.nvim",
   },
 }
