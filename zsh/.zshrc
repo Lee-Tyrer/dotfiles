@@ -11,8 +11,9 @@ fi
 # Load neovim
 export PATH="$PATH:/opt/nvim-linux64/bin"
 
-# Create go path
-export PATH=$PATH:/$HOME/go/bin/
+# Create golang path
+export PATH=$PATH:/usr/local/go/bin
+export PATH=$PATH:$HOME/go/bin/
 
 # If you come from bash you might have to change your $PATH.
 # export PATH=$HOME/bin:/usr/local/bin:$PATH
