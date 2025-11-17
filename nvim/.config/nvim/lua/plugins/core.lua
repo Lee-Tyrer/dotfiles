@@ -25,7 +25,7 @@ return {
   {
     "williamboman/mason.nvim",
     opts = {
-      ensure_installed = { "pyright", "black", "ruff" },
+      ensure_installed = { "pyright", "ruff", "mypy" },
     },
   },
   -- Conform
