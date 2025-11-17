@@ -22,6 +22,9 @@ export NVM_LAZY_LOAD=true
 # Path to your oh-my-zsh installation.
 export ZSH="$HOME/.oh-my-zsh"
 
+export LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED=true 
+export LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT=/home/leetyrer/
+
 # Lazy initialise pyenv 
 export PYENV_ROOT="$HOME/.pyenv"
 if ! type pyenv > /dev/null && [ -f "${PYENV_ROOT}/bin/pyenv" ]; then
@@ -142,7 +145,7 @@ export PATH="$PATH:/home/leetyrer/.local/bin"
 
 # Create shortcut to Neovim config
 alias cn="cd ~/.config/nvim && nvim ."
-alias bb="cd ~/dev/beastball/services/"
+alias bb="cd ~/dev/glowmetry/services/"
 alias vim="nvim"
 
 # export NVM_DIR="/home/leetyrer/.nvm"
