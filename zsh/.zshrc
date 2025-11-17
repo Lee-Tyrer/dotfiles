@@ -25,6 +25,8 @@ export ZSH="$HOME/.oh-my-zsh"
 export LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED=true 
 export LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT=/home/leetyrer/
 
+export AVANTE_OPENAI_API_KEY="$(gpg -d --quiet ./secrets/openai_key.gpg)"
+
 # Lazy initialise pyenv 
 export PYENV_ROOT="$HOME/.pyenv"
 if ! type pyenv > /dev/null && [ -f "${PYENV_ROOT}/bin/pyenv" ]; then
