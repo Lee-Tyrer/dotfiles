@@ -8,43 +8,24 @@ fi
 # Profile start up with zprof
 # zmodload zsh/zprof
 
-# Load neovim
-export PATH="$PATH:/opt/nvim-linux64/bin"
+# Keep command lookup predictable and avoid duplicate PATH entries.
+typeset -U path PATH
+path=(
+  "$HOME/.local/bin"
+  /opt/nvim-linux64/bin
+  $path
+)
 
-# Create golang path
-export PATH=$PATH:/usr/local/go/bin
-export PATH=$PATH:$HOME/go/bin/
+[[ -r "${ZDOTDIR:-$HOME}/.zshrc.env" ]] && source "${ZDOTDIR:-$HOME}/.zshrc.env"
 
 # If you come from bash you might have to change your $PATH.
 # export PATH=$HOME/bin:/usr/local/bin:$PATH
-export NVM_LAZY_LOAD=true
-
 # Path to your oh-my-zsh installation.
 export ZSH="$HOME/.oh-my-zsh"
 
 export LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED=true 
 export LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT=/home/leetyrer/
 
-export AVANTE_OPENAI_API_KEY="$(gpg -d --quiet ./secrets/openai_key.gpg)"
-
-# Lazy initialise pyenv 
-export PYENV_ROOT="$HOME/.pyenv"
-if ! type pyenv > /dev/null && [ -f "${PYENV_ROOT}/bin/pyenv" ]; then
-  export PATH="${PYENV_ROOT}/bin:${PATH}"
-fi
-if type pyenv > /dev/null; then
-  export PATH="${PYENV_ROOT}/bin:${PYENV_ROOT}/shims:${PATH}"
-  function pyenv() {
-    unset -f pyenv
-    eval "$(command pyenv init -)"
-    eval "$(command pyenv virtualenv-init -)"
-    pyenv $@
-  }
-fi
-
-# export PATH="$PYENV_ROOT/bin:$PATH"
-# export PATH="$PATH:/usr/local/go/bin"
-# eval "$(pyenv init --path)"
 
 # Set name of the theme to load --- if set to "random", it will
 # load a random theme each time oh-my-zsh is loaded, in which case,
@@ -112,7 +93,7 @@ ZSH_THEME="powerlevel10k/powerlevel10k"
 # Custom plugins may be added to $ZSH_CUSTOM/plugins/
 # Example format: plugins=(rails git textmate ruby lighthouse)
 # Add wisely, as too many plugins slow down shell startup.
-plugins=(git zsh-autosuggestions zsh-syntax-highlighting fast-syntax-highlighting zsh-autocomplete docker docker-compose zsh-nvm)
+plugins=(git zsh-autosuggestions fast-syntax-highlighting zsh-autocomplete docker)
 
 source $ZSH/oh-my-zsh.sh
 
@@ -142,28 +123,11 @@ source $ZSH/oh-my-zsh.sh
 # alias zshconfig="mate ~/.zshrc"
 # alias ohmyzsh="mate ~/.oh-my-zsh"
 
-# Created by `pipx` on 2023-09-13 12:28:05
-export PATH="$PATH:/home/leetyrer/.local/bin"
-
 # Create shortcut to Neovim config
 alias cn="cd ~/.config/nvim && nvim ."
-alias bb="cd ~/dev/glowmetry/services/"
+alias glw="cd ~/dev/glowmetry/services/"
+alias vids="cd ~/dev/glowmetry/services/vids/"
 alias vim="nvim"
-
-# export NVM_DIR="/home/leetyrer/.nvm"
-# [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"  # This loads nvm
-
-
-# Autoload of aws completion
-complete -C '/usr/local/bin/aws_completer' aws
-
-# Autoload of docker plugin
-autoload -U compinit && compinit
-
-# load old style docker completion
-zstyle ':omz:plugins:docker' legacy-completion yes
-# zstyle ':completion:*:*:docker:*' option-stacking yes
-# zstyle ':completion:*:*:docker-:*:' option-stacking yes
 
 # Have kitty always start a unique socket to listen on for neovim plugin jukit
 alias jukit_kitty="kitty --listen-on=unix:@"$(date + $s$N)" -o allow_remote_control=yes"
@@ -173,3 +137,5 @@ alias jukit_kitty="kitty --listen-on=unix:@"$(date + $s$N)" -o allow_remote_cont
 
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
+
+eval "$(mise activate zsh)"

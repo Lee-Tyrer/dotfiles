@@ -1,0 +1,19 @@
+# Local backups and editor files
+*.orig
+*.bak
+*.swp
+*~
+.DS_Store
+
+# Credentials and machine-local environment files
+secrets/
+.env
+.env.*
+!.env.example
+zsh/.zshrc.env
+
+# Pi machine-local state and credentials
+**/.pi/agent/auth.json
+**/.pi/agent/models-store.json
+**/.pi/agent/sessions/
+**/.pi/agent/npm/node_modules/
