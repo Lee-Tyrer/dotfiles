@@ -1,29 +1,16 @@
 return {
-  -- Colour theme
   {
-    "catppuccin/nvim",
-    name = "catppuccin",
-    opts = {
-      color_overrides = {
-        machiatto = {
-          -- base = "#0e0e0e", -- black
-          -- mantle = "#0e0e0e", -- black
-          -- crust = "#000000",
-        },
-      },
-      transparent_background = false,
-      term_colors = true,
-    },
+    "webhooked/kanso.nvim",
   },
   {
     "LazyVim/LazyVim",
     opts = {
-      colorscheme = "kanso-ink",
+      colorscheme = "kanso-mist",
     },
   },
   -- Ensure mason has packages installed
   {
-    "williamboman/mason.nvim",
+    "mason-org/mason.nvim",
     opts = {
       ensure_installed = { "pyright", "ruff", "mypy" },
     },
@@ -36,16 +23,11 @@ return {
       opts.formatters_by_ft["html"] = { "djlint" }
     end,
   },
-  -- non-LSP hooks for the LSP clients
-  {
-    "nvimtools/none-ls.nvim",
-  },
   -- LSP functionality
   {
     "neovim/nvim-lspconfig",
     opts = {
       inlay_hints = { enabled = false },
-      -- inlay_hints = { enabled = true },
       servers = {
         html = {
           filetypes = { "html", "htmldjango" },
@@ -130,6 +112,15 @@ return {
     },
   },
   {
-    "webhooked/kanso.nvim",
+    "folke/noice.nvim",
+    enabled = false,
+  },
+  {
+    "sidekick.nvim",
+    opts = {
+      nes = {
+        enabled = false,
+      },
+    },
   },
 }

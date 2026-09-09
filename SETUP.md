@@ -1,35 +1,75 @@
-# Set up document for main plugins 
+# Workstation setup
 
-## Terminal and shell
-### Terminal emulator
-Install alacritty from the pop_os store
+This setup uses Zsh with Oh My Zsh, mise for JavaScript runtimes, uv for Python, Alacritty, and Neovim.
 
-Install the required fonts and set up the font size for the monitor.
+## Shell
 
-### Shell
-Install zsh and oh-my-zsh:
+Install Zsh and Oh My Zsh:
 
-```
+```sh
 sudo apt install zsh
 sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 ```
 
-Install the plugins to get set up
-```
-// installing zsh
-sudo apt install zsh-autosuggestions zsh-syntax-highlighting zsh
-// install oh-my-zsh
-sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
-// install plugins
-git clone https://github.com/zsh-users/zsh-autosuggestions.git $ZSH_CUSTOM/plugins/zsh-autosuggestions
-git clone https://github.com/zsh-users/zsh-syntax-highlighting.git $ZSH_CUSTOM/plugins/zsh-syntax-highlighting
-git clone https://github.com/zdharma-continuum/fast-syntax-highlighting.git ${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins/fast-syntax-highlighting
-git clone --depth 1 -- https://github.com/marlonrichert/zsh-autocomplete.git $ZSH_CUSTOM/plugins/zsh-autocomplete
+Install the configured plugins and Powerlevel10k:
+
+```sh
+git clone https://github.com/zsh-users/zsh-autosuggestions.git "$ZSH_CUSTOM/plugins/zsh-autosuggestions"
+git clone https://github.com/zdharma-continuum/fast-syntax-highlighting.git "$ZSH_CUSTOM/plugins/fast-syntax-highlighting"
+git clone --depth 1 https://github.com/marlonrichert/zsh-autocomplete.git "$ZSH_CUSTOM/plugins/zsh-autocomplete"
+git clone --depth 1 https://github.com/romkatv/powerlevel10k.git "$ZSH_CUSTOM/themes/powerlevel10k"
 ```
 
-Add the zsh plugins into the .zshrc file in the plugins option.
+The active plugin list is:
 
-If using aws cli then use the following command to get autocomplete:
+```zsh
+plugins=(git zsh-autosuggestions fast-syntax-highlighting zsh-autocomplete docker)
 ```
-complete -C aws_completer aws
+
+## Node, Bun, Pi, and Codex
+
+Install mise and activate it in Zsh:
+
+```sh
+curl -fsSL https://mise.run | sh
+eval "$("$HOME/.local/bin/mise" activate zsh)"
+mise use --global node@22 bun@latest
 ```
+
+Install the coding agents with mise's Node/npm:
+
+```sh
+npm install -g --ignore-scripts @earendil-works/pi-coding-agent @openai/codex
+```
+
+Verify the setup:
+
+```sh
+node --version
+npm --version
+bun --version
+pi --version
+codex --version
+```
+
+## Python
+
+Install uv with its official standalone installer:
+
+```sh
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+uv owns Python versions and project environments. Install the currently used Python version with:
+
+```sh
+uv python install 3.12.6
+```
+
+Inside a project, use `uv sync`, `uv run`, and `uv add` rather than a global Python environment.
+
+## Terminal and editor
+
+Install Alacritty from the Pop!_OS package store. Neovim is expected at `/opt/nvim-linux64/bin/nvim`; adjust the Zsh PATH entry if installed elsewhere.
+
+After cloning this repository, use GNU Stow as described in the README to link the desired configurations.

@@ -1,31 +1,36 @@
-# How to use this repository
-1. Clone this repo:<br>
-```
-git clone https://github.com/Lee-Tyrer/dotfiles.git $HOME/dotfiles
-cd $HOME/dotfiles
+# Dotfiles
+
+Personal configuration managed with [GNU Stow](https://www.gnu.org/software/stow/).
+
+## Packages
+
+- `alacritty` — terminal configuration
+- `git` — Git configuration
+- `lazygit` — Lazygit configuration
+- `nvim` — Neovim/LazyVim configuration
+- `pi` — Pi coding-agent settings and extensions
+- `zsh` — Zsh, Oh My Zsh, and Powerlevel10k configuration
+
+## Install
+
+Install the base dependencies:
+
+```sh
+sudo apt install git stow zsh
 ```
 
-2. Install GNU stow:<br>
-```
-sudo apt-get install stow
+Clone the repository and stow the packages you want:
+
+```sh
+git clone https://github.com/Lee-Tyrer/dotfiles.git "$HOME/dotfiles"
+cd "$HOME/dotfiles"
+stow -t "$HOME" zsh git alacritty lazygit nvim pi
 ```
 
-# Stowing new changes
-```
-stow --adopt -t ~ <FOLDER>
-```
+Use `stow -R -t "$HOME" <package>` to restow a package after changing its layout, and `stow -D -t "$HOME" <package>` to unlink it.
 
-For example, version control of a git config found in `$HOME/.config/git/.gitconfig` requires
-running these commands:
-```
-cd `$HOME/dotfiles/`
-mkdir git
-cd git
-mkdir .config
-cd .config
-mkdir git
-cd git
-touch .gitconfig
-cd `$HOME/dotfiles/`
-stow --adopt -t ~ git
-```
+## Secrets
+
+Never commit API keys, tokens, `.env` files, or decrypted secret files. Keep machine-specific credentials outside this repository and load them only where needed.
+
+See [SETUP.md](SETUP.md) for the workstation tool setup.

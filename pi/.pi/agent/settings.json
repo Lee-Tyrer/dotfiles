@@ -1,0 +1,16 @@
+{
+  "lastChangelogVersion": "0.85.1",
+  "theme": "dark",
+  "editorPaddingX": 1,
+  "quietStartup": true,
+  "enabledModels": [
+    "openai-codex/gpt-5.6-luna",
+    "openai-codex/gpt-5.6-sol",
+    "openai-codex/gpt-5.6-terra",
+    "openai-codex/gpt-6-astra",
+    "openai-codex/gpt-5.3-codex-spark"
+  ],
+  "packages": [
+    "npm:pi-web-search"
+  ]
+}
