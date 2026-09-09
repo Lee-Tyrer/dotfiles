@@ -106,9 +106,9 @@ function labelFor(limit: RateLimit): string {
 	return limit.limitId.replaceAll("_", " ");
 }
 
-function formatWindow(label: string, window: RateLimitWindow): string {
-	const remaining = Math.max(0, Math.min(100, 100 - window.usedPercent));
-	return `${label} ${remaining.toFixed(0)}% remaining · ${resetTime(window.resetsAt)}`;
+function usageBar(remaining: number): string {
+	const filled = Math.round(remaining / 5);
+	return `[${"█".repeat(filled)}${"░".repeat(20 - filled)}]`;
 }
 
 function rateLimits(data: RateLimitResponse): RateLimit[] {
@@ -120,18 +120,30 @@ function rateLimits(data: RateLimitResponse): RateLimit[] {
 }
 
 function formatUsage(data: RateLimitResponse): string {
-	const weekly: string[] = [];
+	const weekly: Array<{ label: string; remaining: number; resetsAt: number }> = [];
 
 	for (const limit of rateLimits(data)) {
 		for (const window of [limit.primary, limit.secondary]) {
 			if (!window || window.windowDurationMins < 10_080) continue;
-			weekly.push(formatWindow(`${labelFor(limit)} weekly`, window));
+			weekly.push({
+				label: labelFor(limit),
+				remaining: Math.max(0, Math.min(100, 100 - window.usedPercent)),
+				resetsAt: window.resetsAt,
+			});
 		}
 	}
 
-	return weekly.length > 0
-		? ["Weekly usage", ...weekly.map((line) => `  ${line}`)].join("\n")
-		: "Codex returned no weekly rate-limit window.";
+	if (weekly.length === 0) return "Codex returned no weekly rate-limit window.";
+	weekly.reverse();
+
+	const labelWidth = Math.max(...weekly.map(({ label }) => label.length));
+	const lines = ["Weekly usage"];
+	for (const { label, remaining, resetsAt } of weekly) {
+		const prefix = `  ${label.padEnd(labelWidth)}  `;
+		lines.push(`${prefix}${usageBar(remaining)} ${remaining.toFixed(0)}% remaining`);
+		lines.push(`${" ".repeat(prefix.length)}↳ resets ${resetTime(resetsAt)}`);
+	}
+	return lines.join("\n");
 }
 
 export default function (pi: ExtensionAPI) {
