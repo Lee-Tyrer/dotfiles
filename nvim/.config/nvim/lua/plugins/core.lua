@@ -125,13 +125,6 @@ return {
         end,
         desc = "Open Pi",
       },
-      {
-        "<leader>ao",
-        function()
-          require("sidekick.cli").select()
-        end,
-        desc = "Select CLI",
-      },
     },
     opts = {
       nes = {
