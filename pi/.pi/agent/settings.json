@@ -3,6 +3,18 @@
   "theme": "dark",
   "editorPaddingX": 1,
   "quietStartup": true,
+  "terminal": {
+    "hyperlinks": true
+  },
+  "shellCommandPrefix": "export PATH=\"$HOME/.pi/agent/bin:$PATH\"",
+  "defaultProvider": "openai-codex",
+  "defaultModel": "gpt-5.6-luna",
+  "defaultThinkingLevel": "max",
+  "compaction": {
+    "enabled": true,
+    "reserveTokens": 27200,
+    "keepRecentTokens": 20000
+  },
   "enabledModels": [
     "openai-codex/gpt-5.6-luna",
     "openai-codex/gpt-5.6-sol",

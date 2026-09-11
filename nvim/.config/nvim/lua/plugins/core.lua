@@ -117,6 +117,22 @@ return {
   },
   {
     "sidekick.nvim",
+    keys = {
+      {
+        "<leader>aa",
+        function()
+          require("sidekick.cli").toggle({ name = "pi" })
+        end,
+        desc = "Open Pi",
+      },
+      {
+        "<leader>ao",
+        function()
+          require("sidekick.cli").select()
+        end,
+        desc = "Select CLI",
+      },
+    },
     opts = {
       nes = {
         enabled = false,

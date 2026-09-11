@@ -1,5 +1,11 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { CustomEditor, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import {
+	CustomEditor,
+	getAgentDir,
+	SettingsManager,
+	type ExtensionAPI,
+	type ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 type Usage = {
@@ -7,7 +13,14 @@ type Usage = {
 	output: number;
 	cacheRead: number;
 	cacheWrite: number;
+	reasoning?: number;
+	cost?: { total?: number };
 };
+
+// Ratios are measured against the usable context before auto-compaction, not
+// against the model's raw context window percentage.
+const COMPACTION_WARNING_RATIO = 0.9;
+const COMPACTION_CRITICAL_RATIO = 0.98;
 
 const formatTokens = (count: number): string => {
 	if (count < 1_000) return `${count}`;
@@ -17,9 +30,23 @@ const formatTokens = (count: number): string => {
 	return `${Math.round(count / 1_000_000)}M`;
 };
 
-function usageTotals(ctx: ExtensionContext): { input: number; output: number; hitRate?: number } {
+function usageTotals(ctx: ExtensionContext): {
+	input: number;
+	output: number;
+	cacheRead: number;
+	cacheWrite: number;
+	reasoning?: number;
+	total: number;
+	cost: number;
+	hitRate?: number;
+} {
 	let input = 0;
 	let output = 0;
+	let cacheRead = 0;
+	let cacheWrite = 0;
+	let reasoning = 0;
+	let reasoningReported = false;
+	let cost = 0;
 	let latestAssistantUsage: Usage | undefined;
 
 	for (const entry of ctx.sessionManager.getBranch()) {
@@ -28,23 +55,52 @@ function usageTotals(ctx: ExtensionContext): { input: number; output: number; hi
 				const usage = (entry.message as AssistantMessage).usage;
 				input += usage.input;
 				output += usage.output;
+				cacheRead += usage.cacheRead;
+				cacheWrite += usage.cacheWrite;
+				if (usage.reasoning !== undefined) {
+					reasoning += usage.reasoning;
+					reasoningReported = true;
+				}
+				cost += usage.cost?.total ?? 0;
 				latestAssistantUsage = usage;
 			} else if (entry.message.role === "toolResult" && entry.message.usage) {
 				input += entry.message.usage.input;
 				output += entry.message.usage.output;
+				cacheRead += entry.message.usage.cacheRead;
+				cacheWrite += entry.message.usage.cacheWrite;
+				if (entry.message.usage.reasoning !== undefined) {
+					reasoning += entry.message.usage.reasoning;
+					reasoningReported = true;
+				}
+				cost += entry.message.usage.cost?.total ?? 0;
 			}
 		} else if ((entry.type === "compaction" || entry.type === "branch_summary") && entry.usage) {
 			input += entry.usage.input;
 			output += entry.usage.output;
+			cacheRead += entry.usage.cacheRead;
+			cacheWrite += entry.usage.cacheWrite;
+			if (entry.usage.reasoning !== undefined) {
+				reasoning += entry.usage.reasoning;
+				reasoningReported = true;
+			}
+			cost += entry.usage.cost?.total ?? 0;
 		}
 	}
 
-	if (!latestAssistantUsage) return { input, output };
+	const total = input + output + cacheRead + cacheWrite;
+	if (!latestAssistantUsage) {
+		return { input, output, cacheRead, cacheWrite, reasoning: reasoningReported ? reasoning : undefined, total, cost };
+	}
 	const promptTokens =
 		latestAssistantUsage.input + latestAssistantUsage.cacheRead + latestAssistantUsage.cacheWrite;
 	return {
 		input,
 		output,
+		cacheRead,
+		cacheWrite,
+		reasoning: reasoningReported ? reasoning : undefined,
+		total,
+		cost,
 		hitRate: promptTokens > 0 ? (latestAssistantUsage.cacheRead / promptTokens) * 100 : undefined,
 	};
 }
@@ -85,8 +141,16 @@ const formatDuration = (milliseconds: number): string => {
 		.join(" ");
 };
 
-function installFooter(ctx: ExtensionContext): void {
+function installFooter(ctx: ExtensionContext, isPlanMode: () => boolean): void {
 	if (ctx.mode !== "tui") return;
+
+	// Load the same merged global/project setting Pi uses. The manager is
+	// created at session start, so a settings change takes effect after
+	// /reload or when the next session starts.
+	const { enabled: compactionEnabled, reserveTokens: compactionReserveTokens } =
+		SettingsManager.create(ctx.cwd, getAgentDir(), {
+			projectTrusted: ctx.isProjectTrusted(),
+		}).getCompactionSettings();
 
 	ctx.ui.setFooter((_tui, theme) => ({
 		invalidate() {},
@@ -97,20 +161,36 @@ function installFooter(ctx: ExtensionContext): void {
 				if (width === 1) return " ";
 				return ` ${truncateToWidth(line, contentWidth, "")} `;
 			};
-			const { input, output, hitRate } = usageTotals(ctx);
+			const { input, output, total, hitRate } = usageTotals(ctx);
 			const context = ctx.getContextUsage();
-			const contextText = context?.percent === null || context?.percent === undefined
-				? "◉ ?"
-				: `◉ ${context.percent.toFixed(1)}%`;
+			const contextPercent = context?.percent === null || context?.percent === undefined
+				? "?"
+				: `${context.percent.toFixed(1)}%`;
+			let contextColor: "dim" | "warning" | "error" = "dim";
+			if (compactionEnabled && context?.tokens !== null && context?.tokens !== undefined) {
+				const compactionLimit = context.contextWindow - compactionReserveTokens;
+				if (compactionLimit > 0) {
+					const compactionRatio = context.tokens / compactionLimit;
+					if (compactionRatio >= COMPACTION_CRITICAL_RATIO) contextColor = "error";
+					else if (compactionRatio >= COMPACTION_WARNING_RATIO) contextColor = "warning";
+				}
+			}
+			const contextIndicator = theme.fg(
+				contextColor,
+				`${contextColor === "dim" ? "◉" : "⚠"} ${contextPercent}`,
+			);
 			const hitText = hitRate === undefined ? "⚡?" : `⚡${hitRate.toFixed(1)}%`;
 			const model = ctx.model?.id ?? "no model";
 			const thinking = ctx.thinkingLevel ?? "off";
 
-			const left = [theme.fg("accent", model), theme.fg("muted", ` (${thinking})`)].join("");
-			const right = theme.fg(
-				"dim",
-				`${contextText}  ${hitText}  ↑ ${formatTokens(input)}  ↓ ${formatTokens(output)}`,
-			);
+			const plan = isPlanMode() ? theme.fg("warning", " PLAN MODE") : "";
+			const left = [theme.fg("accent", model), theme.fg("muted", ` (${thinking})`), plan].join("");
+			const right =
+				contextIndicator +
+				theme.fg(
+					"dim",
+					`  ${hitText}  Σ ${formatTokens(total)}  ↑ ${formatTokens(input)}  ↓ ${formatTokens(output)}`,
+				);
 			const gap = Math.max(1, contentWidth - visibleWidth(left) - visibleWidth(right));
 
 			let statsLine: string;
@@ -152,8 +232,14 @@ function createWorkedForWidget(duration: number) {
 }
 
 export default function (pi: ExtensionAPI) {
-	const work: WorkTimerState = {};
+	let planModeEnabled = false;
+	pi.events.on("plan-mode:changed", (data) => {
+		if (typeof data !== "object" || data === null) return;
+		const enabled = (data as { enabled?: unknown }).enabled;
+		if (typeof enabled === "boolean") planModeEnabled = enabled;
+	});
 
+	const work: WorkTimerState = {};
 	const stopTimer = () => {
 		if (work.timer !== undefined) clearInterval(work.timer);
 		work.timer = undefined;
@@ -166,13 +252,26 @@ export default function (pi: ExtensionAPI) {
 		work.clearWorkedFor = () => ctx.ui.setWidget("work-timer", undefined);
 		work.setWorkedFor = (duration) => ctx.ui.setWidget("work-timer", createWorkedForWidget(duration));
 		work.clearWorkedFor();
-		installFooter(ctx);
+		installFooter(ctx, () => planModeEnabled);
 		ctx.ui.setEditorComponent((tui, theme, keybindings) => {
 			const editor = new ShipItEditor(tui, theme, keybindings, { embedWorkingStatus: true });
 			editor.placeholder = "What are we building?";
 			editor.placeholderStyle = (text) => ctx.ui.theme.fg("dim", text);
 			return editor;
 		});
+	});
+
+	pi.on("session_compact", (event, ctx) => {
+		const { total } = usageTotals(ctx);
+		const kind = event.reason === "threshold"
+			? "Auto-compaction"
+			: event.reason === "overflow"
+				? "Overflow recovery"
+				: "Manual compaction";
+		ctx.ui.notify(
+			`${kind}: ${formatTokens(event.compactionEntry.tokensBefore)} context tokens before compaction · ${formatTokens(total)} tokens used this session`,
+			"info",
+		);
 	});
 
 	pi.on("agent_start", () => {
