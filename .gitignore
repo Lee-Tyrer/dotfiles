@@ -16,4 +16,6 @@ zsh/.zshrc.env
 **/.pi/agent/auth.json
 **/.pi/agent/models-store.json
 **/.pi/agent/sessions/
+**/.pi/agent/trust.json
+**/.pi/agent/bin/
 **/.pi/agent/npm/node_modules/

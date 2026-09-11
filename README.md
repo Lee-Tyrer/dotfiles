@@ -8,7 +8,7 @@ Personal configuration managed with [GNU Stow](https://www.gnu.org/software/stow
 - `git` — Git configuration
 - `lazygit` — Lazygit configuration
 - `nvim` — Neovim/LazyVim configuration
-- `pi` — Pi coding-agent settings and extensions
+- `pi` — Pi coding-agent settings, keybindings, skills, and extensions
 - `zsh` — Zsh, Oh My Zsh, and Powerlevel10k configuration
 
 ## Install
