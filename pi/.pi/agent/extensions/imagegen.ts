@@ -1,3 +1,6 @@
+/**
+ * Registers imagegen for ChatGPT/Codex-backed raster image generation and editing.
+ */
 import { dirname, extname, isAbsolute, relative, resolve } from "node:path";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";

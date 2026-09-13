@@ -1,7 +1,31 @@
+/**
+ * Adds read-only plan mode via /plan, Shift+Tab, and the --plan flag.
+ */
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 const STATE_ENTRY = "plan-mode-state";
+const PLAN_MODE_CONTEXT_TYPE = "plan-mode-context";
 const PLAN_DISABLED_TOOLS = new Set(["edit", "write", "powershell"]);
+const PLAN_MODE_CONTEXT = `## Plan mode
+You are operating in read-only plan mode.
+
+- Explore the repository and inspect relevant files before deciding what is needed.
+- Do not edit or write files, and do not run commands that mutate the filesystem, repository, dependencies, or environment.
+- When you understand the request, respond with a concrete implementation plan under a heading exactly named "Plan:" followed by numbered steps.
+- The plan must be implementation-specific. For every applicable change, explicitly include:
+  - the exact files or areas to add, modify, or remove;
+  - the function, class, handler, or other symbol names to add or change, plus their responsibilities;
+  - the types, interfaces, schemas, and data contracts involved, including important fields and relationships;
+  - the code, data, and control-flow logic, including relevant event/lifecycle sequencing and state transitions;
+  - assumptions, edge cases, and error-handling behavior;
+  - the validation approach, including relevant checks or commands to run and the expected result.
+- If a category is not applicable, state that explicitly rather than omitting it.
+- Do not claim that changes were made.`;
+
+function isPlanModeContext(message: AgentMessage): boolean {
+	return message.role === "custom" && message.customType === PLAN_MODE_CONTEXT_TYPE;
+}
 
 // Keep this deliberately conservative. In plan mode, the model should use the
 // built-in read/search tools whenever possible, and bash is only a fallback for
@@ -77,6 +101,9 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	}
 
 	function setPlanMode(enabled: boolean): void {
+		// Update the state before rebuilding tools so every synchronous hook sees
+		// the same mode as the statusline and the persisted state.
+		planModeEnabled = enabled;
 		pi.events.emit("plan-mode:changed", { enabled });
 		if (enabled) {
 			if (toolsBeforePlanMode === undefined) {
@@ -89,7 +116,6 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			}
 			toolsBeforePlanMode = undefined;
 		}
-		planModeEnabled = enabled;
 	}
 
 	function persistState(): void {
@@ -155,27 +181,25 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		}
 	});
 
-	pi.on("before_agent_start", (event) => {
-		if (!planModeEnabled) return;
+	// Keep mode instructions in the per-request context rather than in the
+	// per-run system-prompt override. Context is rebuilt before every provider
+	// request, so toggling off during a run removes the instructions before a
+	// queued follow-up is sent as well.
+	pi.on("context", async (event) => {
+		const messages = event.messages.filter((message) => !isPlanModeContext(message));
+		if (!planModeEnabled) return { messages };
 
 		return {
-			systemPrompt: `${event.systemPrompt}
-
-## Plan mode
-You are operating in read-only plan mode.
-
-- Explore the repository and inspect relevant files before deciding what is needed.
-- Do not edit or write files, and do not run commands that mutate the filesystem, repository, dependencies, or environment.
-- When you understand the request, respond with a concrete implementation plan under a heading exactly named "Plan:" followed by numbered steps.
-- The plan must be implementation-specific. For every applicable change, explicitly include:
-  - the exact files or areas to add, modify, or remove;
-  - the function, class, handler, or other symbol names to add or change, plus their responsibilities;
-  - the types, interfaces, schemas, and data contracts involved, including important fields and relationships;
-  - the code, data, and control-flow logic, including relevant event/lifecycle sequencing and state transitions;
-  - assumptions, edge cases, and error-handling behavior;
-  - the validation approach, including relevant checks or commands to run and the expected result.
-- If a category is not applicable, state that explicitly rather than omitting it.
-- Do not claim that changes were made.`,
+			messages: [
+				...messages,
+				{
+					role: "custom",
+					customType: PLAN_MODE_CONTEXT_TYPE,
+					content: PLAN_MODE_CONTEXT,
+					display: false,
+					timestamp: Date.now(),
+				} as AgentMessage,
+			],
 		};
 	});
 

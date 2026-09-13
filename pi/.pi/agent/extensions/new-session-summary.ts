@@ -1,3 +1,6 @@
+/**
+ * Reports token usage from the previous session when a new session starts.
+ */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 

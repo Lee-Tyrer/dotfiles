@@ -1,3 +1,6 @@
+/**
+ * Adds a TUI footer with model, context, token usage, cache, and work-time details.
+ */
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
 	CustomEditor,
@@ -122,13 +125,27 @@ class ShipItEditor extends CustomEditor {
 	}
 }
 
+type TaskTitleTransition = {
+	from: string;
+	to: string;
+	startedAt: number;
+};
+
 type WorkTimerState = {
 	startedAt?: number;
+	taskTitle?: string;
+	titleTransition?: TaskTitleTransition;
+	titleTransitionTimer?: ReturnType<typeof setInterval>;
+	getTaskTitleViewportWidth?: () => number;
 	clearWorkedFor?: () => void;
-	setWorkedFor?: (duration: number) => void;
+	setWorkedFor?: (duration: number, title?: string) => void;
 	setWorkingMessage?: (message?: string) => void;
 	timer?: ReturnType<typeof setInterval>;
 };
+
+const TASK_TITLE_SLIDE_FRAME_MS = 32;
+const TASK_TITLE_SLIDE_DURATION_MS = 1_200;
+const DEFAULT_TASK_TITLE_VIEWPORT_WIDTH = 56;
 
 const formatDuration = (milliseconds: number): string => {
 	const totalSeconds = Math.floor(milliseconds / 1_000);
@@ -141,7 +158,11 @@ const formatDuration = (milliseconds: number): string => {
 		.join(" ");
 };
 
-function installFooter(ctx: ExtensionContext, isPlanMode: () => boolean): void {
+function installFooter(
+	ctx: ExtensionContext,
+	isPlanMode: () => boolean,
+	isFastMode: () => boolean,
+): void {
 	if (ctx.mode !== "tui") return;
 
 	// Load the same merged global/project setting Pi uses. The manager is
@@ -184,7 +205,8 @@ function installFooter(ctx: ExtensionContext, isPlanMode: () => boolean): void {
 			const thinking = ctx.thinkingLevel ?? "off";
 
 			const plan = isPlanMode() ? theme.fg("warning", " PLAN MODE") : "";
-			const left = [theme.fg("accent", model), theme.fg("muted", ` (${thinking})`), plan].join("");
+			const fast = isFastMode() ? theme.fg("accent", " FAST MODE") : "";
+			const left = [theme.fg("accent", model), theme.fg("muted", ` (${thinking})`), plan, fast].join("");
 			const right =
 				contextIndicator +
 				theme.fg(
@@ -214,17 +236,166 @@ function installFooter(ctx: ExtensionContext, isPlanMode: () => boolean): void {
 	}));
 }
 
-function updateWorkingMessage(work: WorkTimerState): void {
-	if (work.startedAt === undefined) return;
-	work.setWorkingMessage?.(`Working for ${formatDuration(Date.now() - work.startedAt)}`);
+function splitTaskTitle(text: string): string[] {
+	return Array.from(
+		new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text),
+		(part) => part.segment,
+	);
 }
 
-function createWorkedForWidget(duration: number) {
+function sliceTaskTitle(text: string, start: number, width: number): string {
+	const end = start + width;
+	let column = 0;
+	let result = "";
+
+	for (const grapheme of splitTaskTitle(text)) {
+		const graphemeWidth = visibleWidth(grapheme);
+		if (graphemeWidth <= 0) {
+			if (column >= start && column < end) result += grapheme;
+			continue;
+		}
+
+		const nextColumn = column + graphemeWidth;
+		if (nextColumn <= start) {
+			column = nextColumn;
+			continue;
+		}
+		if (column >= end) break;
+
+		if (column >= start && nextColumn <= end) {
+			result += grapheme;
+		} else {
+			// Avoid splitting a wide grapheme in half as the viewport moves.
+			result += " ".repeat(Math.min(nextColumn, end) - Math.max(column, start));
+		}
+		column = nextColumn;
+	}
+
+	return result + " ".repeat(Math.max(0, width - visibleWidth(result)));
+}
+
+function easeInOutCubic(value: number): number {
+	return value < 0.5
+		? 4 * value * value * value
+		: 1 - Math.pow(-2 * value + 2, 3) / 2;
+}
+
+function renderBillboardPush(
+	from: string,
+	to: string,
+	progress: number,
+	viewportWidth: number,
+): string {
+	const clippedFrom = truncateToWidth(from, viewportWidth, "");
+	const clippedTo = truncateToWidth(to, viewportWidth, "");
+	const fromWidth = visibleWidth(clippedFrom);
+	const toWidth = visibleWidth(clippedTo);
+	if (fromWidth <= 0 || toWidth <= 0) return clippedTo;
+
+	const easedProgress = easeInOutCubic(Math.max(0, Math.min(1, progress)));
+	const distance = easedProgress * Math.max(fromWidth, toWidth);
+	const incomingWidth = Math.min(toWidth, Math.round(distance));
+	const oldOffset = Math.round(distance) + (distance > 0 ? 1 : 0);
+
+	let width: number;
+	if (toWidth > fromWidth) {
+		// Hold the original footprint until the replacement reaches its edge,
+		// then grow right one column at a time for the remainder of the summary.
+		width = Math.max(fromWidth, incomingWidth);
+	} else if (toWidth < fromWidth) {
+		// Once the shorter replacement is complete, contract the old footprint
+		// while the outgoing prompt continues moving to the right.
+		width = Math.max(toWidth, fromWidth - Math.max(0, Math.round(distance - toWidth)));
+	} else {
+		width = fromWidth;
+	}
+
+	const visibleIncomingWidth = Math.min(incomingWidth, width);
+	const incoming = sliceTaskTitle(clippedTo, 0, visibleIncomingWidth);
+	const oldStart = Math.min(width, Math.max(visibleIncomingWidth, oldOffset));
+	const oldVisibleWidth = Math.min(fromWidth, Math.max(0, width - oldStart));
+	const outgoing = oldVisibleWidth > 0 ? sliceTaskTitle(clippedFrom, 0, oldVisibleWidth) : "";
+	const gap = oldStart - visibleIncomingWidth;
+	return (
+		incoming +
+		" ".repeat(gap) +
+		outgoing +
+		" ".repeat(Math.max(0, width - visibleWidth(incoming) - gap - visibleWidth(outgoing)))
+	);
+}
+
+function stopTaskTitleTransition(work: WorkTimerState): void {
+	if (work.titleTransitionTimer !== undefined) clearInterval(work.titleTransitionTimer);
+	work.titleTransitionTimer = undefined;
+	work.titleTransition = undefined;
+}
+
+function displayedWorkingMessage(work: WorkTimerState, duration: string): string {
+	if (!work.taskTitle) return `Working for ${duration}`;
+
+	const transition = work.titleTransition;
+	if (!transition) return `${work.taskTitle} · ${duration}`;
+
+	const elapsed = Date.now() - transition.startedAt;
+	if (elapsed >= TASK_TITLE_SLIDE_DURATION_MS) {
+		stopTaskTitleTransition(work);
+		return `${work.taskTitle} · ${duration}`;
+	}
+
+	const from = `${transition.from} · ${duration}`;
+	const to = `${transition.to} · ${duration}`;
+	const viewportWidth = Math.max(visibleWidth(from), visibleWidth(to));
+	return renderBillboardPush(from, to, elapsed / TASK_TITLE_SLIDE_DURATION_MS, viewportWidth);
+}
+
+function updateWorkingMessage(work: WorkTimerState): void {
+	if (work.startedAt === undefined) return;
+	const duration = formatDuration(Date.now() - work.startedAt);
+	work.setWorkingMessage?.(displayedWorkingMessage(work, duration));
+}
+
+function startTaskTitleTransition(work: WorkTimerState, title: string): void {
+	const previousTitle = work.taskTitle;
+	stopTaskTitleTransition(work);
+	work.taskTitle = title;
+
+	if (!previousTitle || previousTitle === title || work.startedAt === undefined) {
+		updateWorkingMessage(work);
+		return;
+	}
+
+	const viewportWidth = Math.max(
+		1,
+		work.getTaskTitleViewportWidth?.() ?? DEFAULT_TASK_TITLE_VIEWPORT_WIDTH,
+	);
+	const from = truncateToWidth(previousTitle, viewportWidth, "");
+	const to = truncateToWidth(title, viewportWidth, "");
+	if (!from || !to || from === to) {
+		updateWorkingMessage(work);
+		return;
+	}
+	work.titleTransition = {
+		from,
+		to,
+		startedAt: Date.now(),
+	};
+	updateWorkingMessage(work);
+	work.titleTransitionTimer = setInterval(() => {
+		if (!work.titleTransition) return;
+		if (Date.now() - work.titleTransition.startedAt >= TASK_TITLE_SLIDE_DURATION_MS) {
+			stopTaskTitleTransition(work);
+		}
+		updateWorkingMessage(work);
+	}, TASK_TITLE_SLIDE_FRAME_MS);
+}
+
+function createWorkedForWidget(duration: number, title?: string) {
 	return (_tui: unknown, theme: { fg(color: "dim", text: string): string }) => ({
 		invalidate() {},
 		render(width: number): string[] {
 			if (width <= 0) return [];
-			const worked = theme.fg("dim", ` Worked for ${formatDuration(duration)} `);
+			const label = title ? `${title} · ${formatDuration(duration)}` : `Worked for ${formatDuration(duration)}`;
+			const worked = theme.fg("dim", ` ${label} `);
 			const line = theme.fg("dim", "─".repeat(Math.max(0, width - visibleWidth(worked))));
 			return ["", truncateToWidth(worked + line, width, ""), ""];
 		},
@@ -238,8 +409,34 @@ export default function (pi: ExtensionAPI) {
 		const enabled = (data as { enabled?: unknown }).enabled;
 		if (typeof enabled === "boolean") planModeEnabled = enabled;
 	});
+	let fastModeEnabled = false;
+	pi.events.on("fast-mode:changed", (data) => {
+		if (typeof data !== "object" || data === null) return;
+		const enabled = (data as { enabled?: unknown }).enabled;
+		if (typeof enabled === "boolean") fastModeEnabled = enabled;
+	});
 
 	const work: WorkTimerState = {};
+	pi.events.on("task-title:changed", (data) => {
+		if (typeof data !== "object" || data === null) return;
+		const taskTitle = data as { title?: unknown; transition?: unknown };
+		if (taskTitle.title !== undefined && typeof taskTitle.title !== "string") return;
+		if (taskTitle.transition !== undefined && typeof taskTitle.transition !== "boolean") return;
+
+		const previousTitle = work.taskTitle;
+		if (
+			taskTitle.transition === true &&
+			typeof taskTitle.title === "string" &&
+			previousTitle !== taskTitle.title
+		) {
+			startTaskTitleTransition(work, taskTitle.title);
+		} else {
+			stopTaskTitleTransition(work);
+			work.taskTitle = taskTitle.title;
+			updateWorkingMessage(work);
+		}
+	});
+
 	const stopTimer = () => {
 		if (work.timer !== undefined) clearInterval(work.timer);
 		work.timer = undefined;
@@ -247,12 +444,16 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", (_event, ctx) => {
 		stopTimer();
+		stopTaskTitleTransition(work);
 		work.startedAt = undefined;
+		work.taskTitle = undefined;
+		work.getTaskTitleViewportWidth = () =>
+			Math.max(20, Math.min(DEFAULT_TASK_TITLE_VIEWPORT_WIDTH, (process.stdout.columns ?? 80) - 16));
 		work.setWorkingMessage = (message?: string) => ctx.ui.setWorkingMessage(message);
 		work.clearWorkedFor = () => ctx.ui.setWidget("work-timer", undefined);
-		work.setWorkedFor = (duration) => ctx.ui.setWidget("work-timer", createWorkedForWidget(duration));
+		work.setWorkedFor = (duration, title) => ctx.ui.setWidget("work-timer", createWorkedForWidget(duration, title));
 		work.clearWorkedFor();
-		installFooter(ctx, () => planModeEnabled);
+		installFooter(ctx, () => planModeEnabled, () => fastModeEnabled);
 		ctx.ui.setEditorComponent((tui, theme, keybindings) => {
 			const editor = new ShipItEditor(tui, theme, keybindings, { embedWorkingStatus: true });
 			editor.placeholder = "What are we building?";
@@ -287,13 +488,15 @@ export default function (pi: ExtensionAPI) {
 		if (work.startedAt === undefined) return;
 		const duration = Date.now() - work.startedAt;
 		stopTimer();
+		stopTaskTitleTransition(work);
 		work.startedAt = undefined;
 		work.setWorkingMessage?.();
-		work.setWorkedFor?.(duration);
+		work.setWorkedFor?.(duration, work.taskTitle);
 	});
 
 	pi.on("session_shutdown", () => {
 		stopTimer();
+		stopTaskTitleTransition(work);
 		work.setWorkingMessage?.();
 	});
 }
