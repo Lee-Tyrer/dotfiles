@@ -10,3 +10,6 @@ cursor:
   style:
     shape: Block
     blinking: Off
+key_bindings:
+  - { key: Return, mods: Control, chars: "\x1b[13;5u" }
+  - { key: M, mods: Control, chars: "\x1b[109;5u" }

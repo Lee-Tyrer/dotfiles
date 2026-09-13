@@ -1,3 +1,6 @@
+/**
+ * Registers /status to display weekly Codex usage and reset times.
+ */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";

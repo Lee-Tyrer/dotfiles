@@ -1,3 +1,6 @@
+/**
+ * Replaces core file, search, and shell tools with context-efficient versions and path recovery.
+ */
 import type {
   AgentToolResult,
   ExtensionAPI,

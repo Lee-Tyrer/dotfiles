@@ -24,5 +24,6 @@
   ],
   "packages": [
     "npm:pi-web-search"
-  ]
+  ],
+  "hideThinkingBlock": false
 }
