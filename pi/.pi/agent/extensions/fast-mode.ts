@@ -5,9 +5,25 @@
  * OpenAI-compatible provider request gets `service_tier: "priority"`.
  */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { Provider } from "@earendil-works/pi-ai";
 
 const STATE_ENTRY = "fast-mode-state";
+const CODEX_PROVIDER = "openai-codex";
+const CODEX_API = "openai-codex-responses";
 const FAST_SERVICE_TIER = "priority";
+const FAST_MODE_ADAPTER = "__piFastModeAdapter";
+
+interface FastModeAdapter {
+    setEnabled(enabled: boolean): void;
+}
+
+type FastModeProvider = Provider & {
+    [FAST_MODE_ADAPTER]?: FastModeAdapter;
+};
+
+type ProviderStreamModel = Parameters<Provider["stream"]>[0];
+type ProviderStreamContext = Parameters<Provider["stream"]>[1];
+type ProviderStreamOptions = Parameters<Provider["stream"]>[2];
 
 interface FastModeState {
 	enabled: boolean;
@@ -46,6 +62,7 @@ function applyFastServiceTier(payload: unknown): unknown {
 
 export default function fastModeExtension(pi: ExtensionAPI): void {
 	let fastModeEnabled = false;
+	let fastModeProvider: FastModeProvider | undefined;
 
 	function updateStatus(ctx: ExtensionContext): void {
 		ctx.ui.setStatus(
@@ -56,7 +73,53 @@ export default function fastModeExtension(pi: ExtensionAPI): void {
 
 	function setFastMode(enabled: boolean): void {
 		fastModeEnabled = enabled;
+		fastModeProvider?.[FAST_MODE_ADAPTER]?.setEnabled(enabled);
 		pi.events.emit("fast-mode:changed", { enabled });
+	}
+
+	function installFastModeProvider(ctx: ExtensionContext): void {
+		const registeredProvider = ctx.modelRegistry.getRegisteredNativeProvider(CODEX_PROVIDER) as
+			| FastModeProvider
+			| undefined;
+		if (registeredProvider?.[FAST_MODE_ADAPTER]) {
+			fastModeProvider = registeredProvider;
+			registeredProvider[FAST_MODE_ADAPTER].setEnabled(fastModeEnabled);
+			return;
+		}
+
+		const provider = ctx.modelRegistry.getProvider(CODEX_PROVIDER);
+		if (!provider) return;
+		const existingAdapter = (provider as FastModeProvider)[FAST_MODE_ADAPTER];
+		if (existingAdapter) {
+			fastModeProvider = provider as FastModeProvider;
+			existingAdapter.setEnabled(fastModeEnabled);
+			return;
+		}
+
+		const state = { enabled: fastModeEnabled };
+		const wrappedProvider = {
+			...provider,
+			stream(
+				model: ProviderStreamModel,
+				context: ProviderStreamContext,
+				options?: ProviderStreamOptions,
+			) {
+				if (!state.enabled || model.api !== CODEX_API) {
+					return provider.stream(model, context, options);
+				}
+				return provider.stream(model, context, {
+					...(options ?? {}),
+					serviceTier: FAST_SERVICE_TIER,
+				} as ProviderStreamOptions);
+			},
+		} as FastModeProvider;
+		wrappedProvider[FAST_MODE_ADAPTER] = {
+			setEnabled: (enabled) => {
+				state.enabled = enabled;
+			},
+		};
+		pi.registerProvider(wrappedProvider);
+		fastModeProvider = wrappedProvider;
 	}
 
 	function persistState(): void {
@@ -101,6 +164,7 @@ export default function fastModeExtension(pi: ExtensionAPI): void {
 		// A session choice wins over --fast when resuming or navigating branches.
 		const enabled = getSavedState(ctx)?.enabled ?? (pi.getFlag("fast") === true);
 		setFastMode(enabled);
+		installFastModeProvider(ctx);
 		updateStatus(ctx);
 	}
 
