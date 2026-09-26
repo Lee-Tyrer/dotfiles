@@ -1,0 +1,63 @@
+# Kanso Mist — same palette as Neovim's kanso-mist colorscheme.
+[colors.primary]
+background = "#22262D"
+foreground = "#C5C9C7"
+
+[colors.normal]
+black = "#22262D"
+red = "#C4746E"
+green = "#8A9A7B"
+yellow = "#C4B28A"
+blue = "#8BA4B0"
+magenta = "#A292A3"
+cyan = "#8EA4A2"
+white = "#A4A7A4"
+
+[colors.bright]
+black = "#5C6066"
+red = "#E46876"
+green = "#87A987"
+yellow = "#E6C384"
+blue = "#7FB4CA"
+magenta = "#938AA9"
+cyan = "#7AA89F"
+white = "#C5C9C7"
+
+[colors.selection]
+background = "#393B44"
+foreground = "#C5C9C7"
+
+[[colors.indexed_colors]]
+index = 16
+color = "#B6927B"
+
+[[colors.indexed_colors]]
+index = 17
+color = "#B98D7B"
+
+[cursor.style]
+blinking = "Off"
+shape = "Block"
+
+[font]
+size = 11.5
+
+[font.normal]
+family = "JetBrainsMono Nerd Font Mono"
+style = "Medium"
+
+[font.offset]
+x = 0
+y = 0
+
+[keyboard]
+
+[[keyboard.bindings]]
+chars = "\u001B[13;5u"
+key = "Return"
+mods = "Control"
+
+[[keyboard.bindings]]
+chars = "\u001B[109;5u"
+key = "M"
+mods = "Control"
