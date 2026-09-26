@@ -10,7 +10,7 @@ secrets/
 .env
 .env.*
 !.env.example
-zsh/.zshrc.env
+.bashrc.env
 
 # Pi machine-local state and credentials
 **/.pi/agent/auth.json
