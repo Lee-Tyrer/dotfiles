@@ -3,8 +3,8 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 
 const TASK_TITLE_EVENT = "task-title:changed";
 const SUMMARY_MODEL_CANDIDATES = [
-	["openai-codex", "gpt-5.6-luna"],
-	["openai", "gpt-5.6-luna"],
+	["openai-codex", "gpt-6-luna"],
+	["openai", "gpt-6-luna"],
 ] as const;
 const MAX_PROMPT_CHARS = 4_000;
 const MAX_TITLE_CHARS = 56;
