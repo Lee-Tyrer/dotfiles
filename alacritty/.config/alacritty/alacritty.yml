@@ -1,3 +1,7 @@
+colors:
+  primary:
+    background: "#14171D"
+
 font:
   normal:
     family: Jetbrains Mono NerdFont

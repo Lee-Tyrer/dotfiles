@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.85.1",
+  "lastChangelogVersion": "0.87.1",
   "theme": "dark",
   "editorPaddingX": 1,
   "quietStartup": true,
@@ -8,7 +8,7 @@
   },
   "shellCommandPrefix": "export PATH=\"$HOME/.pi/agent/bin:$PATH\"",
   "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.6-luna",
+  "defaultModel": "gpt-6-luna",
   "defaultThinkingLevel": "max",
   "compaction": {
     "enabled": true,
@@ -16,14 +16,10 @@
     "keepRecentTokens": 20000
   },
   "enabledModels": [
-    "openai-codex/gpt-5.6-luna",
-    "openai-codex/gpt-5.6-sol",
-    "openai-codex/gpt-5.6-terra",
-    "openai-codex/gpt-6-astra",
-    "openai-codex/gpt-5.3-codex-spark"
+    "openai-codex/gpt-6-luna",
+    "openai-codex/gpt-6-sol",
+    "openai-codex/gpt-6-astra"
   ],
-  "packages": [
-    "npm:pi-web-search"
-  ],
+  "packages": ["npm:pi-web-search"],
   "hideThinkingBlock": false
 }

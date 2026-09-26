@@ -129,9 +129,6 @@ alias glw="cd ~/dev/glowmetry/services/"
 alias vids="cd ~/dev/glowmetry/services/vids/"
 alias vim="nvim"
 
-# Have kitty always start a unique socket to listen on for neovim plugin jukit
-alias jukit_kitty="kitty --listen-on=unix:@"$(date + $s$N)" -o allow_remote_control=yes"
-
 # End profiling
 # zprof
 

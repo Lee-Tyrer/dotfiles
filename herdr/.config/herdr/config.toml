@@ -1,0 +1,44 @@
+onboarding = false
+
+[keys]
+switch_tab = ""
+switch_workspace = "prefix+1..9"
+focus_pane_left = "prefix+ctrl+h"
+focus_pane_down = "prefix+ctrl+j"
+focus_pane_up = "prefix+ctrl+k"
+focus_pane_right = "prefix+ctrl+l"
+
+[ui]
+status_indicators = "symbols"
+
+[ui.sound]
+enabled = false
+
+[ui.toast]
+delivery = "herdr"
+
+[theme]
+name = "terminal"
+auto_switch = false
+
+# Kanso Mist palette with a raised sidebar surface for contrast.
+[theme.custom]
+panel_bg = "#22262D"
+sidebar_bg = "#2A2C35"
+active_row_bg = "#393B44"
+selection_bg = "#393B44"
+surface0 = "#2A2C35"
+surface1 = "#393B44"
+surface_dim = "#22262D"
+overlay0 = "#909398"
+overlay1 = "#A4A7A4"
+text = "#C5C9C7"
+subtext0 = "#A4A7A4"
+accent = "#7FB4CA"
+blue = "#7FB4CA"
+teal = "#6A9589"
+mauve = "#938AA9"
+green = "#98BB6C"
+yellow = "#DCA561"
+red = "#C34043"
+peach = "#B6927B"
