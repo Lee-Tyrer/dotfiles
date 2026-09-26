@@ -6,6 +6,7 @@ Personal configuration managed with [GNU Stow](https://www.gnu.org/software/stow
 
 - `alacritty` — terminal configuration
 - `git` — Git configuration
+- `herdr` — Herdr keybindings and theme
 - `lazygit` — Lazygit configuration
 - `nvim` — Neovim/LazyVim configuration
 - `pi` — Pi coding-agent settings, keybindings, skills, and extensions
@@ -24,7 +25,7 @@ Clone the repository and stow the packages you want:
 ```sh
 git clone https://github.com/Lee-Tyrer/dotfiles.git "$HOME/dotfiles"
 cd "$HOME/dotfiles"
-stow -t "$HOME" zsh git alacritty lazygit nvim pi
+stow -t "$HOME" zsh git alacritty herdr lazygit nvim pi
 ```
 
 Use `stow -R -t "$HOME" <package>` to restow a package after changing its layout, and `stow -D -t "$HOME" <package>` to unlink it.

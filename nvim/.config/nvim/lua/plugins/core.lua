@@ -1,6 +1,20 @@
 return {
   {
     "webhooked/kanso.nvim",
+    opts = {
+      colors = {
+        palette = {
+          mistBg0 = "#22262D",
+        },
+      },
+      overrides = function(colors)
+        local sidebar_bg = colors.palette.mistBg1
+        return {
+          NeoTreeNormal = { fg = colors.theme.ui.fg, bg = sidebar_bg },
+          NeoTreeNormalNC = { fg = colors.theme.ui.fg, bg = sidebar_bg },
+        }
+      end,
+    },
   },
   {
     "LazyVim/LazyVim",

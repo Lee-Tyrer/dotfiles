@@ -1,7 +1,7 @@
 {
   "app.thinking.cycle": [],
   "app.thinking.toggle": [],
-  "app.model.select": "ctrl+l",
+  "app.model.select": ["ctrl+shift+l", "ctrl+l"],
   "app.message.followUp": "ctrl+enter",
   "app.message.dequeue": "ctrl+up",
   "app.tree.filter.noTools": []

@@ -1,14 +1,13 @@
 /**
- * Adds a session-scoped Fast mode that requests OpenAI's priority service tier.
- *
- * Fast mode deliberately has no model allowlist. When enabled, every
- * OpenAI-compatible provider request gets `service_tier: "priority"`.
+ * Adds a session-scoped Fast mode for GPT-6 Luna using OpenAI's priority tier.
+ * New chats default to Fast mode when GPT-6 Luna is selected.
  */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Provider } from "@earendil-works/pi-ai";
 
 const STATE_ENTRY = "fast-mode-state";
 const CODEX_PROVIDER = "openai-codex";
+const FAST_MODEL_ID = "gpt-6-luna";
 const CODEX_API = "openai-codex-responses";
 const FAST_SERVICE_TIER = "priority";
 const FAST_MODE_ADAPTER = "__piFastModeAdapter";
@@ -27,6 +26,7 @@ type ProviderStreamOptions = Parameters<Provider["stream"]>[2];
 
 interface FastModeState {
 	enabled: boolean;
+	automatic: boolean;
 }
 
 function getSavedState(ctx: ExtensionContext): FastModeState | undefined {
@@ -36,20 +36,16 @@ function getSavedState(ctx: ExtensionContext): FastModeState | undefined {
 		if (entry?.type !== "custom" || entry.customType !== STATE_ENTRY) continue;
 		if (typeof entry.data !== "object" || entry.data === null) continue;
 
-		const data = entry.data as { enabled?: unknown };
+		const data = entry.data as { enabled?: unknown; automatic?: unknown };
 		if (typeof data.enabled === "boolean") {
-			return { enabled: data.enabled };
+			return { enabled: data.enabled, automatic: data.automatic === true };
 		}
 	}
 	return undefined;
 }
 
-function isOpenAICompatibleModel(ctx: ExtensionContext): boolean {
-	const api = ctx.model?.api;
-	return api === "openai-codex-responses"
-		|| api === "openai-responses"
-		|| api === "azure-openai-responses"
-		|| api === "openai-completions";
+function isFastModeModel(model: { provider?: string; id?: string } | undefined): boolean {
+	return model?.provider === CODEX_PROVIDER && model.id === FAST_MODEL_ID;
 }
 
 function applyFastServiceTier(payload: unknown): unknown {
@@ -63,6 +59,7 @@ function applyFastServiceTier(payload: unknown): unknown {
 export default function fastModeExtension(pi: ExtensionAPI): void {
 	let fastModeEnabled = false;
 	let fastModeProvider: FastModeProvider | undefined;
+	let autoFastForNewSession = false;
 
 	function updateStatus(ctx: ExtensionContext): void {
 		ctx.ui.setStatus(
@@ -104,7 +101,7 @@ export default function fastModeExtension(pi: ExtensionAPI): void {
 				context: ProviderStreamContext,
 				options?: ProviderStreamOptions,
 			) {
-				if (!state.enabled || model.api !== CODEX_API) {
+				if (!state.enabled || model.api !== CODEX_API || !isFastModeModel(model)) {
 					return provider.stream(model, context, options);
 				}
 				return provider.stream(model, context, {
@@ -122,8 +119,8 @@ export default function fastModeExtension(pi: ExtensionAPI): void {
 		fastModeProvider = wrappedProvider;
 	}
 
-	function persistState(): void {
-		pi.appendEntry(STATE_ENTRY, { enabled: fastModeEnabled });
+	function persistState(automatic = false): void {
+		pi.appendEntry(STATE_ENTRY, { enabled: fastModeEnabled, automatic });
 	}
 
 	function toggleFastMode(ctx: ExtensionContext): void {
@@ -139,13 +136,13 @@ export default function fastModeExtension(pi: ExtensionAPI): void {
 	}
 
 	pi.registerFlag("fast", {
-		description: "Start with Fast mode enabled",
+		description: "Start with Fast mode enabled for GPT-6 Luna",
 		type: "boolean",
 		default: false,
 	});
 
 	pi.registerCommand("fast", {
-		description: "Toggle Fast mode (priority service tier)",
+		description: "Toggle GPT-6 Luna Fast mode (priority service tier)",
 		handler: async (args, ctx) => {
 			if (args.trim()) {
 				ctx.ui.notify("Usage: /fast", "warning");
@@ -156,23 +153,37 @@ export default function fastModeExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("before_provider_request", (event, ctx) => {
-		if (!fastModeEnabled || !isOpenAICompatibleModel(ctx)) return;
+		if (!fastModeEnabled || !isFastModeModel(ctx.model)) return;
 		return applyFastServiceTier(event.payload);
 	});
 
-	function syncFromSession(ctx: ExtensionContext): void {
-		// A session choice wins over --fast when resuming or navigating branches.
-		const enabled = getSavedState(ctx)?.enabled ?? (pi.getFlag("fast") === true);
+	function syncFromSession(ctx: ExtensionContext, useModelDefault = false): void {
+		// A saved session choice wins; otherwise new chats default to Fast only for GPT-6 Luna.
+		const savedState = getSavedState(ctx);
+		const enabled = savedState?.enabled
+			?? (pi.getFlag("fast") === true || (useModelDefault && isFastModeModel(ctx.model)));
+		autoFastForNewSession = useModelDefault;
 		setFastMode(enabled);
+		if (useModelDefault && !savedState) persistState(true);
 		installFastModeProvider(ctx);
 		updateStatus(ctx);
 	}
 
-	pi.on("session_start", async (_event, ctx) => {
-		syncFromSession(ctx);
+	pi.on("session_start", async (event, ctx) => {
+		syncFromSession(ctx, event.reason === "new" || event.reason === "startup");
 	});
 
 	pi.on("session_tree", async (_event, ctx) => {
-		syncFromSession(ctx);
+		syncFromSession(ctx, autoFastForNewSession);
+	});
+
+	pi.on("model_select", (event, ctx) => {
+		if (!autoFastForNewSession) return;
+		const savedState = getSavedState(ctx);
+		if (savedState && !savedState.automatic) return;
+
+		setFastMode(pi.getFlag("fast") === true || isFastModeModel(event.model));
+		persistState(true);
+		updateStatus(ctx);
 	});
 }
