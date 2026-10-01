@@ -1,2 +1,3 @@
-# Pi session history
+# Pi session history and runtime logs
 /agent/sessions/
+/agent/logs/

@@ -9,7 +9,7 @@ import {
 	type ExtensionAPI,
 	type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { sliceByColumn, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 type Usage = {
 	input: number;
@@ -111,6 +111,36 @@ function usageTotals(ctx: ExtensionContext): {
 class ShipItEditor extends CustomEditor {
 	placeholder = "";
 	placeholderStyle = (text: string): string => text;
+	renderWorkingMessage?: (width: number) => string | undefined;
+	private statusIndicator: Parameters<CustomEditor["setWorkingStatusIndicator"]>[0];
+
+	override setWorkingStatusIndicator(
+		indicator: Parameters<CustomEditor["setWorkingStatusIndicator"]>[0],
+	): void {
+		this.statusIndicator = indicator;
+		super.setWorkingStatusIndicator(indicator);
+	}
+
+	protected override renderTopBorder(width: number, hiddenLineCount: number): string {
+		const indicator = this.statusIndicator;
+		if (indicator?.kind !== "working" || hiddenLineCount > 0 || width <= 5) {
+			return super.renderTopBorder(width, hiddenLineCount);
+		}
+
+		const spinner = indicator.renderSpinnerInBorder(width - 5);
+		const prefix = spinner ? `${spinner} ` : "";
+		const messageWidth = Math.max(0, width - 4 - visibleWidth(prefix));
+		const message = this.renderWorkingMessage?.(messageWidth);
+		if (message === undefined) return super.renderTopBorder(width, hiddenLineCount);
+
+		// Compose the live label directly into one border row. The normal loader
+		// word-wraps its message, which is unsuitable for a sliding viewport.
+		const status = prefix + this.borderColor(truncateToWidth(message, messageWidth, ""));
+		return (
+			this.borderColor("── ") + status +
+			this.borderColor(` ${"─".repeat(Math.max(0, width - visibleWidth(status) - 4))}`)
+		);
+	}
 
 	render(width: number): string[] {
 		const lines = super.render(width);
@@ -125,18 +155,12 @@ class ShipItEditor extends CustomEditor {
 	}
 }
 
-type TaskTitleTransition = {
-	from: string;
-	to: string;
-	startedAt: number;
-};
-
 type WorkTimerState = {
 	startedAt?: number;
 	taskTitle?: string;
-	titleTransition?: TaskTitleTransition;
+	titleTransition?: { from: string; startedAt: number };
 	titleTransitionTimer?: ReturnType<typeof setInterval>;
-	getTaskTitleViewportWidth?: () => number;
+	requestRender?: () => void;
 	clearWorkedFor?: () => void;
 	setWorkedFor?: (duration: number, title?: string) => void;
 	setWorkingMessage?: (message?: string) => void;
@@ -145,7 +169,6 @@ type WorkTimerState = {
 
 const TASK_TITLE_SLIDE_FRAME_MS = 32;
 const TASK_TITLE_SLIDE_DURATION_MS = 1_200;
-const DEFAULT_TASK_TITLE_VIEWPORT_WIDTH = 56;
 
 const formatDuration = (milliseconds: number): string => {
 	const totalSeconds = Math.floor(milliseconds / 1_000);
@@ -236,157 +259,44 @@ function installFooter(
 	}));
 }
 
-function splitTaskTitle(text: string): string[] {
-	return Array.from(
-		new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text),
-		(part) => part.segment,
-	);
-}
-
-function sliceTaskTitle(text: string, start: number, width: number): string {
-	const end = start + width;
-	let column = 0;
-	let result = "";
-
-	for (const grapheme of splitTaskTitle(text)) {
-		const graphemeWidth = visibleWidth(grapheme);
-		if (graphemeWidth <= 0) {
-			if (column >= start && column < end) result += grapheme;
-			continue;
-		}
-
-		const nextColumn = column + graphemeWidth;
-		if (nextColumn <= start) {
-			column = nextColumn;
-			continue;
-		}
-		if (column >= end) break;
-
-		if (column >= start && nextColumn <= end) {
-			result += grapheme;
-		} else {
-			// Avoid splitting a wide grapheme in half as the viewport moves.
-			result += " ".repeat(Math.min(nextColumn, end) - Math.max(column, start));
-		}
-		column = nextColumn;
-	}
-
-	return result + " ".repeat(Math.max(0, width - visibleWidth(result)));
-}
-
-function easeInOutCubic(value: number): number {
-	return value < 0.5
-		? 4 * value * value * value
-		: 1 - Math.pow(-2 * value + 2, 3) / 2;
-}
-
-function renderBillboardPush(
-	from: string,
-	to: string,
-	progress: number,
-	viewportWidth: number,
-): string {
-	const clippedFrom = truncateToWidth(from, viewportWidth, "");
-	const clippedTo = truncateToWidth(to, viewportWidth, "");
-	const fromWidth = visibleWidth(clippedFrom);
-	const toWidth = visibleWidth(clippedTo);
-	if (fromWidth <= 0 || toWidth <= 0) return clippedTo;
-
-	const easedProgress = easeInOutCubic(Math.max(0, Math.min(1, progress)));
-	const distance = easedProgress * Math.max(fromWidth, toWidth);
-	const incomingWidth = Math.min(toWidth, Math.round(distance));
-	const oldOffset = Math.round(distance) + (distance > 0 ? 1 : 0);
-
-	let width: number;
-	if (toWidth > fromWidth) {
-		// Hold the original footprint until the replacement reaches its edge,
-		// then grow right one column at a time for the remainder of the summary.
-		width = Math.max(fromWidth, incomingWidth);
-	} else if (toWidth < fromWidth) {
-		// Once the shorter replacement is complete, contract the old footprint
-		// while the outgoing prompt continues moving to the right.
-		width = Math.max(toWidth, fromWidth - Math.max(0, Math.round(distance - toWidth)));
-	} else {
-		width = fromWidth;
-	}
-
-	const visibleIncomingWidth = Math.min(incomingWidth, width);
-	const incoming = sliceTaskTitle(clippedTo, 0, visibleIncomingWidth);
-	const oldStart = Math.min(width, Math.max(visibleIncomingWidth, oldOffset));
-	const oldVisibleWidth = Math.min(fromWidth, Math.max(0, width - oldStart));
-	const outgoing = oldVisibleWidth > 0 ? sliceTaskTitle(clippedFrom, 0, oldVisibleWidth) : "";
-	const gap = oldStart - visibleIncomingWidth;
-	return (
-		incoming +
-		" ".repeat(gap) +
-		outgoing +
-		" ".repeat(Math.max(0, width - visibleWidth(incoming) - gap - visibleWidth(outgoing)))
-	);
-}
-
 function stopTaskTitleTransition(work: WorkTimerState): void {
 	if (work.titleTransitionTimer !== undefined) clearInterval(work.titleTransitionTimer);
 	work.titleTransitionTimer = undefined;
 	work.titleTransition = undefined;
 }
 
-function displayedWorkingMessage(work: WorkTimerState, duration: string): string {
-	if (!work.taskTitle) return `Working for ${duration}`;
+function renderWorkingMessage(work: WorkTimerState, width: number): string | undefined {
+	if (work.startedAt === undefined) return undefined;
+	const duration = formatDuration(Date.now() - work.startedAt);
+	const suffix = work.taskTitle ? ` · ${duration}` : ` for ${duration}`;
+	const titleWidth = Math.max(0, width - visibleWidth(suffix));
+	if (titleWidth === 0) return truncateToWidth(duration, width, "");
 
+	const to = truncateToWidth(work.taskTitle ?? "Working", titleWidth, "…");
 	const transition = work.titleTransition;
-	if (!transition) return `${work.taskTitle} · ${duration}`;
+	const progress = transition
+		? Math.min(1, Math.max(0, (performance.now() - transition.startedAt) / TASK_TITLE_SLIDE_DURATION_MS))
+		: 1;
+	if (!transition || progress >= 1) return to + suffix;
 
-	const elapsed = Date.now() - transition.startedAt;
-	if (elapsed >= TASK_TITLE_SLIDE_DURATION_MS) {
-		stopTaskTitleTransition(work);
-		return `${work.taskTitle} · ${duration}`;
-	}
-
-	const from = `${transition.from} · ${duration}`;
-	const to = `${transition.to} · ${duration}`;
-	const viewportWidth = Math.max(visibleWidth(from), visibleWidth(to));
-	return renderBillboardPush(from, to, elapsed / TASK_TITLE_SLIDE_DURATION_MS, viewportWidth);
+	const from = truncateToWidth(transition.from, titleWidth, "…");
+	const fromWidth = visibleWidth(from);
+	const toWidth = visibleWidth(to);
+	const easedProgress = progress * progress * (3 - 2 * progress);
+	const frameWidth = Math.round(fromWidth + (toWidth - fromWidth) * easedProgress);
+	const offset = Math.min(frameWidth, Math.round(Math.max(fromWidth, toWidth) * easedProgress));
+	const incoming = truncateToWidth(sliceByColumn(to, 0, offset, true), offset, "", true);
+	const outgoingWidth = frameWidth - offset;
+	const outgoing = truncateToWidth(sliceByColumn(from, 0, outgoingWidth, true), outgoingWidth, "", true);
+	// Ease the title's right edge toward its final width so the timer follows
+	// the slide instead of jumping into place when the transition ends.
+	return incoming + outgoing + suffix;
 }
 
 function updateWorkingMessage(work: WorkTimerState): void {
 	if (work.startedAt === undefined) return;
 	const duration = formatDuration(Date.now() - work.startedAt);
-	work.setWorkingMessage?.(displayedWorkingMessage(work, duration));
-}
-
-function startTaskTitleTransition(work: WorkTimerState, title: string): void {
-	const previousTitle = work.taskTitle;
-	stopTaskTitleTransition(work);
-	work.taskTitle = title;
-
-	if (!previousTitle || previousTitle === title || work.startedAt === undefined) {
-		updateWorkingMessage(work);
-		return;
-	}
-
-	const viewportWidth = Math.max(
-		1,
-		work.getTaskTitleViewportWidth?.() ?? DEFAULT_TASK_TITLE_VIEWPORT_WIDTH,
-	);
-	const from = truncateToWidth(previousTitle, viewportWidth, "");
-	const to = truncateToWidth(title, viewportWidth, "");
-	if (!from || !to || from === to) {
-		updateWorkingMessage(work);
-		return;
-	}
-	work.titleTransition = {
-		from,
-		to,
-		startedAt: Date.now(),
-	};
-	updateWorkingMessage(work);
-	work.titleTransitionTimer = setInterval(() => {
-		if (!work.titleTransition) return;
-		if (Date.now() - work.titleTransition.startedAt >= TASK_TITLE_SLIDE_DURATION_MS) {
-			stopTaskTitleTransition(work);
-		}
-		updateWorkingMessage(work);
-	}, TASK_TITLE_SLIDE_FRAME_MS);
+	work.setWorkingMessage?.(work.taskTitle ? `${work.taskTitle} · ${duration}` : `Working for ${duration}`);
 }
 
 function createWorkedForWidget(duration: number, title?: string) {
@@ -424,17 +334,23 @@ export default function (pi: ExtensionAPI) {
 		if (taskTitle.transition !== undefined && typeof taskTitle.transition !== "boolean") return;
 
 		const previousTitle = work.taskTitle;
+		stopTaskTitleTransition(work);
+		work.taskTitle = taskTitle.title;
 		if (
 			taskTitle.transition === true &&
-			typeof taskTitle.title === "string" &&
-			previousTitle !== taskTitle.title
+			previousTitle && taskTitle.title && previousTitle !== taskTitle.title &&
+			work.startedAt !== undefined
 		) {
-			startTaskTitleTransition(work, taskTitle.title);
-		} else {
-			stopTaskTitleTransition(work);
-			work.taskTitle = taskTitle.title;
-			updateWorkingMessage(work);
+			work.titleTransition = { from: previousTitle, startedAt: performance.now() };
+			work.titleTransitionTimer = setInterval(() => {
+				if (!work.titleTransition) return;
+				if (performance.now() - work.titleTransition.startedAt >= TASK_TITLE_SLIDE_DURATION_MS) {
+					stopTaskTitleTransition(work);
+				}
+				work.requestRender?.();
+			}, TASK_TITLE_SLIDE_FRAME_MS);
 		}
+		updateWorkingMessage(work);
 	});
 
 	const stopTimer = () => {
@@ -447,8 +363,7 @@ export default function (pi: ExtensionAPI) {
 		stopTaskTitleTransition(work);
 		work.startedAt = undefined;
 		work.taskTitle = undefined;
-		work.getTaskTitleViewportWidth = () =>
-			Math.max(20, Math.min(DEFAULT_TASK_TITLE_VIEWPORT_WIDTH, (process.stdout.columns ?? 80) - 16));
+		work.requestRender = undefined;
 		work.setWorkingMessage = (message?: string) => ctx.ui.setWorkingMessage(message);
 		work.clearWorkedFor = () => ctx.ui.setWidget("work-timer", undefined);
 		work.setWorkedFor = (duration, title) => ctx.ui.setWidget("work-timer", createWorkedForWidget(duration, title));
@@ -458,6 +373,8 @@ export default function (pi: ExtensionAPI) {
 			const editor = new ShipItEditor(tui, theme, keybindings, { embedWorkingStatus: true });
 			editor.placeholder = "What are we building?";
 			editor.placeholderStyle = (text) => ctx.ui.theme.fg("dim", text);
+			editor.renderWorkingMessage = (width) => renderWorkingMessage(work, width);
+			work.requestRender = () => tui.requestRender();
 			return editor;
 		});
 	});
@@ -497,6 +414,8 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_shutdown", () => {
 		stopTimer();
 		stopTaskTitleTransition(work);
+		work.startedAt = undefined;
+		work.requestRender = undefined;
 		work.setWorkingMessage?.();
 	});
 }

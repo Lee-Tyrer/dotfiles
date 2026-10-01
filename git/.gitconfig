@@ -17,3 +17,6 @@
 	smudge = git-lfs smudge -- %f
 	process = git-lfs filter-process
 	required = true
+[user]
+	email = lee.4lifee@gmail.com
+	name = Lee Tyrer

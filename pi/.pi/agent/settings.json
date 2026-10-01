@@ -1,6 +1,6 @@
 {
-  "lastChangelogVersion": "0.87.1",
-  "theme": "dark",
+  "lastChangelogVersion": "0.99.2",
+  "theme": "kanso-mist",
   "editorPaddingX": 1,
   "quietStartup": true,
   "terminal": {
@@ -17,9 +17,11 @@
   },
   "enabledModels": [
     "openai-codex/gpt-6-luna",
-    "openai-codex/gpt-6-sol",
+    "openai-codex/gpt-6.1-sol",
     "openai-codex/gpt-6-astra"
   ],
-  "packages": ["npm:pi-web-search"],
+  "packages": [
+    "npm:pi-web-search"
+  ],
   "hideThinkingBlock": false
 }

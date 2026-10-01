@@ -156,5 +156,7 @@ fi
 
 # Activate ble.sh after other shell initialization.
 if [ -n "${BLE_VERSION:-}" ]; then
+  # Use the terminal's blue for functions, including mise's cd wrapper.
+  ble-face -s command_function fg=blue
   ble-attach
 fi
