@@ -19,3 +19,10 @@ secrets/
 **/.pi/agent/trust.json
 **/.pi/agent/bin/
 **/.pi/agent/npm/node_modules/
+
+# Herdr machine-local runtime state
+herdr/.config/herdr/session.json
+herdr/.config/herdr/*.log
+herdr/.config/herdr/plugins.json
+herdr/.config/herdr/release-notes.json
+herdr/.config/herdr/.plugins.lock

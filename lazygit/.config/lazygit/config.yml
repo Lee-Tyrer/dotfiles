@@ -2,6 +2,17 @@ os:
   editCommand: "vi"
   editCommandTemplate: '{{editor}} "$(pwd)/{{filename}}"'
 gui:
+  # Kanso Mist (Neovim's kanso-mist palette).
+  theme:
+    activeBorderColor: ['#7FB4CA', 'bold']
+    inactiveBorderColor: ['#5C6066']
+    searchingActiveBorderColor: ['#DCA561', 'bold']
+    optionsTextColor: ['#7FB4CA']
+    selectedLineBgColor: ['#393B44']
+    cherryPickedCommitBgColor: ['#2A2C35']
+    cherryPickedCommitFgColor: ['#938AA9']
+    unstagedChangesColor: ['#C34043']
+    defaultFgColor: ['#C5C9C7']
   scrollHeight: 10
   scrollPastBottom: true
   scrollOffMargin: 2

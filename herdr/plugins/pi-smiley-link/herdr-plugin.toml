@@ -1,0 +1,17 @@
+id = "lee.pi-smiley-link"
+name = "Pi Local File Links"
+version = "0.1.0"
+min_herdr_version = "0.9.1"
+platforms = ["linux"]
+
+[[actions]]
+id = "open-local-file"
+title = "Open local file"
+contexts = ["workspace"]
+command = ["python3", "open_local_file.py"]
+
+[[link_handlers]]
+id = "local-file"
+title = "Open local file in default app"
+pattern = '^file:'
+action = "open-local-file"
