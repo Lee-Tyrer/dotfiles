@@ -1,0 +1,21 @@
+id = "lee.equal-tiles"
+name = "Equal Tiles"
+version = "0.1.0"
+min_herdr_version = "0.9.1"
+description = "i3-style sibling sizing for Herdr panes, without changing Herdr itself."
+platforms = ["linux"]
+
+[[startup]]
+command = ["python3", "equal_tiles.py", "--start"]
+
+[[actions]]
+id = "start"
+title = "Start automatic sibling tiling"
+contexts = ["workspace"]
+command = ["python3", "equal_tiles.py", "--start"]
+
+[[actions]]
+id = "balance"
+title = "Balance pane groups"
+contexts = ["workspace"]
+command = ["python3", "equal_tiles.py", "--balance"]
