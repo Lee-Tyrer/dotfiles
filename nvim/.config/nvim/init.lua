@@ -1,5 +1,6 @@
 -- bootstrap lazy.nvim, LazyVim and your plugins
 require("config.lazy")
+require("herdr_session").setup()
 
 -- Reduce leader key timeout: Speeds up which key functionality
 vim.opt.timeoutlen = 100

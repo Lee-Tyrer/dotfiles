@@ -1,8 +1,9 @@
 {
-  "lastChangelogVersion": "0.99.2",
+  "lastChangelogVersion": "1.0.0",
   "theme": "kanso-mist",
   "editorPaddingX": 1,
   "quietStartup": true,
+  "tuiMode": "regular",
   "terminal": {
     "hyperlinks": true
   },
@@ -20,8 +21,6 @@
     "openai-codex/gpt-6.1-sol",
     "openai-codex/gpt-6-astra"
   ],
-  "packages": [
-    "npm:pi-web-search"
-  ],
+  "packages": ["npm:pi-web-search"],
   "hideThinkingBlock": false
 }

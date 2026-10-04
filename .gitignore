@@ -17,6 +17,7 @@ secrets/
 **/.pi/agent/models-store.json
 **/.pi/agent/sessions/
 **/.pi/agent/trust.json
+**/.pi/agent/question-summary-usage.json
 **/.pi/agent/bin/
 **/.pi/agent/npm/node_modules/
 

@@ -77,7 +77,7 @@ if ! installed nvim 'NVIM v0.12.5'; then
   ln -s "$dest/bin/nvim" "$HOME/.local/bin/nvim"
 fi
 
-say 'Install LazyGit 0.65.1 and Herdr 0.9.1'
+say 'Install LazyGit 0.65.1 and Herdr 0.9.3'
 if ! installed lazygit '0.65.1'; then
   fetch 'https://github.com/jesseduffield/lazygit/releases/download/v0.65.1/lazygit_0.65.1_linux_x86_64.tar.gz' \
     02beacbcda0fa342e50ae3480ba8147307353af3fb28e1d5f790e02329c201a6 "$tmp/lazygit.tar.gz"
@@ -85,9 +85,9 @@ if ! installed lazygit '0.65.1'; then
   tar -xzf "$tmp/lazygit.tar.gz" -C "$tmp/lazygit" lazygit
   install -m 755 "$tmp/lazygit/lazygit" "$HOME/.local/bin/lazygit"
 fi
-if ! installed herdr '0.9.1'; then
-  fetch 'https://github.com/herdrdev/herdr/releases/download/v0.9.1/herdr-linux-x86_64' \
-    2a02fed16beb651ef006e1d43f048f652ca4dc58ad053cd2d44450563d5c54b7 "$tmp/herdr"
+if ! installed herdr '0.9.3'; then
+  fetch 'https://github.com/herdrdev/herdr/releases/download/v0.9.3/herdr-linux-x86_64' \
+    18a8dc65f1c2fa485884344356dea1cfd911c6f06cf46fa78e193f4087f4dba7 "$tmp/herdr"
   install -m 755 "$tmp/herdr" "$HOME/.local/bin/herdr"
 fi
 
