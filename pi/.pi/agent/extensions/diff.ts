@@ -1,10 +1,12 @@
 /**
- * /diff opens the latest prompt's recorded edit diffs in Neovim.
+ * /diff [count] reviews prompt edits; /diff branch [base] reviews the Git branch.
+ * The Neovim picker switches between loaded prompts and the combined Git diff.
+ * Review comments are sent as one follow-up when Neovim exits.
  * Uses tool-result details.diff, including history from before this extension loaded.
- * Write and Bash changes are excluded. No repository or filesystem snapshot is used.
+ * Prompt reviews exclude Write and Bash changes; Git reviews include tracked changes.
  */
 import { spawnSync } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
@@ -15,6 +17,7 @@ interface DiffChange {
 	toolCallId: string;
 	path: string;
 	diff: string;
+	format?: "unified";
 }
 
 interface PromptDiff {
@@ -23,6 +26,8 @@ interface PromptDiff {
 	changes: DiffChange[];
 	omittedWrites: number;
 	missingEdits: number;
+	kind?: "git";
+	description?: string;
 }
 
 function recordedDiff(details: unknown): string | undefined {
@@ -93,6 +98,101 @@ export function collectLatestPromptDiff(entries: readonly SessionEntry[]): Promp
 	return result;
 }
 
+export function collectPromptDiffs(entries: readonly SessionEntry[], count: number): PromptDiff[] {
+	const starts = entries.flatMap((entry, index) =>
+		entry.type === "message" && entry.message.role === "user" ? [index] : []);
+	return starts.slice(-count).flatMap((start, index, selected) => {
+		const end = selected[index + 1] ?? entries.length;
+		const review = collectLatestPromptDiff(entries.slice(start, end));
+		return review ? [review] : [];
+	});
+}
+
+function gitOutput(cwd: string, args: string[], optional = false): string | undefined {
+	const result = spawnSync("git", args, { cwd, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+	if (result.error || result.status !== 0) {
+		if (optional) return undefined;
+		throw new Error(result.error?.message ?? (result.stderr.trim() || "Git command failed."));
+	}
+	return result.stdout;
+}
+
+export function collectGitBranchDiff(cwd: string, requestedBase?: string): PromptDiff {
+	const root = gitOutput(cwd, ["rev-parse", "--show-toplevel"])!.trim();
+	const branch = gitOutput(root, ["symbolic-ref", "--quiet", "--short", "HEAD"], true)?.trim()
+		?? gitOutput(root, ["rev-parse", "--short", "HEAD"])!.trim();
+	const defaultRef = gitOutput(root, ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"], true)?.trim();
+	const candidates = [defaultRef, "origin/main", "origin/master", "main", "master"];
+	const base = requestedBase ?? candidates.find((ref) => ref && ref !== branch
+		&& gitOutput(root, ["rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`], true) !== undefined);
+	if (!base) throw new Error("Could not determine the Git base. Use /diff branch <base-ref>.");
+	const baseCommit = gitOutput(root, ["rev-parse", "--verify", "--end-of-options", `${base}^{commit}`])!.trim();
+	const mergeBase = gitOutput(root, ["merge-base", "HEAD", baseCommit])!.trim();
+	const paths = gitOutput(root, ["diff", "--no-ext-diff", "--no-renames", "--name-only", "-z", mergeBase, "--"])!
+		.split("\0").filter(Boolean);
+	return {
+		kind: "git",
+		prompt: `Git branch: ${branch} vs ${base}`,
+		timestamp: new Date().toISOString(),
+		description: `Merge base: ${mergeBase.slice(0, 12)}. Includes committed, staged and unstaged tracked changes; untracked files are excluded.`,
+		omittedWrites: 0,
+		missingEdits: 0,
+		changes: paths.map((path, index) => ({
+			toolCallId: `git:${index}`,
+			path: join(root, path),
+			format: "unified",
+			diff: gitOutput(root, ["--literal-pathspecs", "diff", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames", "--unified=4", mergeBase, "--", path])!.trimEnd(),
+		})),
+	};
+}
+
+interface ReviewComment {
+	promptIndex: number;
+	changeIndex: number;
+	startLine?: number;
+	endLine?: number;
+	text: string;
+}
+
+function formatComments(reviews: PromptDiff[], comments: ReviewComment[]): string | undefined {
+	const sections = comments.flatMap((comment) => {
+		const review = reviews[comment.promptIndex - 1];
+		const change = review?.changes[comment.changeIndex - 1];
+		if (!change || typeof comment.text !== "string" || !comment.text.trim()) return [];
+		const start = comment.startLine;
+		const end = comment.endLine;
+		const location = typeof start === "number" && Number.isSafeInteger(start) && start > 0
+			? `:${start}${typeof end === "number" && Number.isSafeInteger(end) && end > start ? `-${end}` : ""}`
+			: "";
+		return [`${change.path}${location}: ${comment.text.trim()}`];
+	});
+	return sections.length
+		? `Please review and address these comments:\n\n${sections.join("\n\n")}`
+		: undefined;
+}
+
+async function submitComments(pi: ExtensionAPI, text: string): Promise<boolean> {
+	let acknowledge!: (received: boolean) => void;
+	const received = new Promise<boolean>((resolve) => { acknowledge = resolve; });
+	// sendUserMessage is fire-and-forget; confirm delivery from the actual user message.
+	const unsubscribe = pi.on("message_end", (event) => {
+		if (event.message.role !== "user") return;
+		const content = event.message.content;
+		const message = typeof content === "string" ? content
+			: content.filter((part) => part.type === "text").map((part) => part.text).join("\n");
+		if (message === text) acknowledge(true);
+	});
+	const timeout = setTimeout(() => acknowledge(false), 10_000);
+	timeout.unref();
+	try {
+		pi.sendUserMessage(text, { deliverAs: "followUp" });
+		return await received;
+	} finally {
+		clearTimeout(timeout);
+		unsubscribe();
+	}
+}
+
 export default function diffExtension(pi: ExtensionAPI): void {
 	// Nested results are not stored in the normal transcript. Save only those diffs.
 	pi.on("tool_result", (event) => {
@@ -107,10 +207,13 @@ export default function diffExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.registerCommand("diff", {
-		description: "Review the latest prompt's recorded edit diffs in Neovim",
+		description: "Pick prompt or Git branch diffs: /diff [count] or /diff branch [base]",
 		handler: async (args, ctx) => {
-			if (args.trim()) {
-				ctx.ui.notify("Usage: /diff", "warning");
+			const argument = args.trim();
+			const branchArgs = /^branch(?:\s+(\S+))?$/.exec(argument);
+			const count = argument && !branchArgs ? Number(argument) : undefined;
+			if (argument && !branchArgs && (!/^[1-9]\d*$/.test(argument) || !Number.isSafeInteger(count))) {
+				ctx.ui.notify("Usage: /diff [positive prompt count] or /diff branch [base-ref]", "warning");
 				return;
 			}
 			if (ctx.mode !== "tui") {
@@ -120,15 +223,27 @@ export default function diffExtension(pi: ExtensionAPI): void {
 			await ctx.waitForIdle();
 
 			let directory: string | undefined;
+			let keepDirectory = false;
 			try {
-				const review = collectLatestPromptDiff(ctx.sessionManager.getBranch());
-				if (!review?.changes.length) {
-					ctx.ui.notify("No recorded edit diffs for the latest prompt. Write and Bash changes are excluded.", "info");
+				const entries = ctx.sessionManager.getBranch();
+				const reviews = branchArgs ? [] : collectPromptDiffs(entries, count ?? entries.length);
+				const initialPrompt = Math.max(1, reviews.length);
+				let branchError: string | undefined;
+				try {
+					reviews.push(collectGitBranchDiff(ctx.cwd, branchArgs?.[1]));
+				} catch (error) {
+					if (branchArgs) throw error;
+					branchError = error instanceof Error ? error.message : String(error);
+				}
+				if (!reviews.length) {
+					ctx.ui.notify("No prompts available to review.", "info");
 					return;
 				}
 				directory = await mkdtemp(join(tmpdir(), "pi-prompt-diff-"));
+				keepDirectory = true;
 				const payload = join(directory, "review.json");
-				await writeFile(payload, JSON.stringify(review), { mode: 0o600 });
+				const commentsPath = join(directory, "comments.json");
+				await writeFile(payload, JSON.stringify({ prompts: reviews, initialPrompt, branchError }), { mode: 0o600 });
 
 				const error = await ctx.ui.custom<string | undefined>((tui, _theme, _keys, done) => {
 					tui.stop();
@@ -141,7 +256,7 @@ export default function diffExtension(pi: ExtensionAPI): void {
 						], {
 							cwd: ctx.cwd,
 							stdio: "inherit",
-							env: { ...process.env, PI_PROMPT_DIFF: payload },
+							env: { ...process.env, PI_PROMPT_DIFF: payload, PI_PROMPT_DIFF_COMMENTS: commentsPath },
 						});
 						if (result.error) error = result.error.message;
 						else if (result.status !== 0) error = `Neovim exited: ${result.signal ?? result.status}`;
@@ -152,11 +267,40 @@ export default function diffExtension(pi: ExtensionAPI): void {
 					done(error);
 					return { render: () => [], invalidate() {} };
 				});
-				if (error) ctx.ui.notify(error, "error");
+				if (error) ctx.ui.notify(error, "warning");
+				let comments: ReviewComment[];
+				try {
+					comments = JSON.parse(await readFile(commentsPath, "utf8"));
+				} catch (error) {
+					if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+						keepDirectory = false;
+						ctx.ui.notify("No saved diff comments found; nothing submitted.", "info");
+						return;
+					}
+					throw error;
+				}
+				if (!Array.isArray(comments)) throw new Error("Invalid diff review comments.");
+				const followUp = formatComments(reviews, comments);
+				if (!followUp) {
+					if (comments.length) throw new Error("Saved diff comments could not be formatted.");
+					keepDirectory = false;
+					ctx.ui.notify("No diff comments added; nothing submitted.", "info");
+					return;
+				}
+				const draftPath = join(directory, "followup.txt");
+				await writeFile(draftPath, followUp, { mode: 0o600 });
+				ctx.ui.notify("Submitting diff comments...", "info");
+				if (await submitComments(pi, followUp)) {
+					keepDirectory = false;
+					ctx.ui.notify("Diff comments submitted.", "info");
+				} else {
+					ctx.ui.notify(`Diff comment submission not confirmed. Copy the [saved follow-up](file://${draftPath}) into Pi to retry.`, "warning");
+				}
 			} catch (error) {
-				ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
+				const message = error instanceof Error ? error.message : String(error);
+				ctx.ui.notify(`Diff comments not submitted: ${message}${directory && keepDirectory ? `\n[Review files preserved](file://${directory}/)` : ""}`, "error");
 			} finally {
-				if (directory) await rm(directory, { recursive: true, force: true });
+				if (directory && !keepDirectory) await rm(directory, { recursive: true, force: true });
 			}
 		},
 	});
