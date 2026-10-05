@@ -31,4 +31,6 @@ Use `stow -R -t "$HOME" <package>` to restow a package after changing its layout
 
 Never commit API keys, tokens, `.env` files, or decrypted secret files. Bash optionally loads `~/.bashrc.env` for machine-local exports and secrets; this file lives outside the repository. Create it with `touch ~/.bashrc.env && chmod 600 ~/.bashrc.env`, then add only the exports you need. `.bashrc.env` is also ignored by Git in case a copy ends up in the repository. Gitignore does not protect secrets that were already committed or force-added.
 
+Git identity and credential-helper settings live in `~/.gitconfig.local`, which the tracked Git config includes. Keep this file outside the repository.
+
 See [SETUP.md](SETUP.md) for the workstation tool setup.

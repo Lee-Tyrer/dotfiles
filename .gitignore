@@ -6,6 +6,8 @@
 .DS_Store
 
 # Credentials and machine-local environment files
+.gitconfig.local
+.git-credentials
 secrets/
 .env
 .env.*
