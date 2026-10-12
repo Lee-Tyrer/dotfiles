@@ -246,6 +246,8 @@ export default function taskTitleExtension(pi: ExtensionAPI): void {
   });
 
   pi.on("before_agent_start", (event, ctx) => {
+    if (event.messageType !== "user") return;
+
     // This is a TUI affordance. Avoid making an extra request in print/JSON/RPC modes.
     if (ctx.mode !== "tui") return;
 
