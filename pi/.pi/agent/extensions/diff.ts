@@ -130,6 +130,9 @@ export function collectGitBranchDiff(cwd: string, requestedBase?: string): Promp
 	const mergeBase = gitOutput(root, ["merge-base", "HEAD", baseCommit])!.trim();
 	const paths = gitOutput(root, ["diff", "--no-ext-diff", "--no-renames", "--name-only", "-z", mergeBase, "--"])!
 		.split("\0").filter(Boolean);
+	const diff = gitOutput(root, ["diff", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames", "--unified=4", mergeBase, "--"])!;
+	const patches = diff ? diff.split(/(?=^diff --git )/m) : [];
+	if (patches.length !== paths.length) throw new Error("Git diff file list does not match the generated patches.");
 	return {
 		kind: "git",
 		prompt: `Git branch: ${branch} vs ${base}`,
@@ -141,7 +144,7 @@ export function collectGitBranchDiff(cwd: string, requestedBase?: string): Promp
 			toolCallId: `git:${index}`,
 			path: join(root, path),
 			format: "unified",
-			diff: gitOutput(root, ["--literal-pathspecs", "diff", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames", "--unified=4", mergeBase, "--", path])!.trimEnd(),
+			diff: patches[index]!.trimEnd(),
 		})),
 	};
 }
