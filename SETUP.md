@@ -1,25 +1,20 @@
 # Workstation setup
 
-This setup uses Bash with ble.sh and fzf, mise for JavaScript runtimes, uv for Python, Alacritty, and Neovim. On Pop!_OS/Ubuntu 24.04 x86-64, run `./setup.sh` from this repository to install the pinned workstation tools and stow the configs. It needs network access and `sudo` for system packages; it does not restore credentials or project data. The commands below cover manual installation of the shell tools and runtimes; the script also installs Neovim, LazyGit, Herdr, and the configured font.
+This setup uses Bash with bashline and fzf, mise for JavaScript runtimes, uv for Python, Alacritty, and Neovim. On Pop!_OS/Ubuntu 24.04 x86-64, run `./setup.sh` from this repository to install the pinned workstation tools and stow the configs. It needs network access and `sudo` for system packages; it does not restore credentials or project data. The commands below cover manual installation of the shell tools and runtimes; the script also installs Neovim, LazyGit, Herdr, and the configured font.
 
 ## Shell
 
-Install Bash completion and stow the `bash` package as described in the README. The prompt uses the system Git prompt (`git-sh-prompt`), provided by the Git package on Ubuntu/Pop!_OS. ble.sh provides autosuggestions and highlighting; fzf adds Ctrl-R, Ctrl-T, Alt-C and fuzzy completion. Install the prebuilt ble.sh version used here into your user data directory (Linux x86-64):
+The shell uses bashline for history-based inline suggestions and a Tab completion menu backed by fzf. Bash generates the completion candidates, including directory-aware `cd` completion. Right Arrow accepts a suggestion; fzf also provides Ctrl-R history search, Ctrl-T file selection, and Alt-C directory selection. The prompt uses the system Git prompt (`git-sh-prompt`), provided by the Git package on Ubuntu/Pop!_OS.
+
+For manual installation, install fzf using the instructions below, then install the development headers and build the extension from the dotfiles repository:
 
 ```bash
-(
-  set -euo pipefail
-  archive=ble-nightly-20260908+d81fd54.tar.xz
-  tmp=$(mktemp -d)
-  trap 'rm -rf "$tmp"' EXIT
-  curl -fsSL "https://github.com/akinomyoga/ble.sh/releases/download/nightly/ble-nightly-20260908%2Bd81fd54.tar.xz" -o "$tmp/$archive"
-  echo "7a2445f138e7f099dd5dee749391a8b045646d1b8a605975885be5b34b6b5f7e  $tmp/$archive" | sha256sum -c -
-  mkdir -p "$HOME/.local/share/blesh"
-  tar -xJf "$tmp/$archive" -C "$HOME/.local/share/blesh" --strip-components=1
-)
+sudo apt-get install -y bash-completion bash-builtins libreadline-dev build-essential git stow
+cd "$HOME/dotfiles"
+bash bash/.local/share/bashline/build.bash
 ```
 
-The Bash config loads ble.sh and fzf only when installed. Install fzf using the instructions below. Store local exports and secrets in `~/.bashrc.env`, not in the tracked config.
+Stow the `bash` package as described in the README, then open a new terminal or reconnect over SSH. `./setup.sh` handles the dependencies, build, and Stow links automatically. The compiled module stays in the user cache; only its source and startup scripts belong in the repository. See [bashline usage](bash/.local/share/bashline/README.md) for keybindings and build details. Store local exports and secrets in `~/.bashrc.env`, not in the tracked config.
 
 ## Node, Bun, Pi, and Codex
 

@@ -19,11 +19,6 @@ if [ -f "$HOME/.bashrc.env" ]; then
   . "$HOME/.bashrc.env"
 fi
 
-# Load ble.sh before configuring the interactive shell; attach at the end.
-if [ -r "$HOME/.local/share/blesh/ble.sh" ]; then
-  source "$HOME/.local/share/blesh/ble.sh" --attach=none
-fi
-
 # don't put duplicate lines or lines starting with space in the history.
 # See bash(1) for more options
 HISTCONTROL=ignoreboth
@@ -144,19 +139,10 @@ if [ -r "$HOME/.cargo/env" ]; then
   . "$HOME/.cargo/env"
 fi
 
-# Use ble.sh's fzf integration so its bindings and ** completion work together.
+# Use fzf's native Bash bindings and completion integration.
 if command -v fzf >/dev/null 2>&1; then
-  if [ -n "${BLE_VERSION:-}" ]; then
-    ble-import -d integration/fzf-completion
-    ble-import -d integration/fzf-key-bindings
-  else
-    eval "$(fzf --bash)"
-  fi
+  eval "$(fzf --bash)"
 fi
 
-# Activate ble.sh after other shell initialization.
-if [ -n "${BLE_VERSION:-}" ]; then
-  # Use the terminal's blue for functions, including mise's cd wrapper.
-  ble-face -s command_function fg=blue
-  ble-attach
-fi
+# Activate bashline after other shell initialization.
+source "$HOME/.local/share/bashline/init.bash"

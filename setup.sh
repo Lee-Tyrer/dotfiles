@@ -36,8 +36,8 @@ installed() { command -v "$1" >/dev/null 2>&1 && "$1" --version 2>&1 | grep -Fq 
 
 say 'Install system packages and build dependencies'
 sudo apt-get update
-sudo apt-get install -y git stow bash-completion curl ca-certificates xz-utils \
-  build-essential pkg-config cmake libfontconfig1-dev libfreetype-dev \
+sudo apt-get install -y git stow bash-completion bash-builtins libreadline-dev \
+  curl ca-certificates xz-utils build-essential pkg-config cmake libfontconfig1-dev libfreetype-dev \
   libxcb-xfixes0-dev libxkbcommon-dev ncurses-bin fontconfig python3 \
   ripgrep fd-find git-lfs
 # Ubuntu packages this executable as fdfind; preserve the usual fd command.
@@ -53,14 +53,8 @@ if ! installed fzf '0.74.4'; then
   install -m 755 "$tmp/fzf" "$HOME/.local/bin/fzf"
 fi
 
-say 'Install ble.sh 0.4.0-nightly+d81fd54'
-ble="$HOME/.local/share/blesh/ble.sh"
-if [[ ! -e $ble ]]; then
-  fetch 'https://github.com/akinomyoga/ble.sh/releases/download/nightly/ble-nightly-20260908%2Bd81fd54.tar.xz' \
-    7a2445f138e7f099dd5dee749391a8b045646d1b8a605975885be5b34b6b5f7e "$tmp/blesh.tar.xz"
-  mkdir -p "$HOME/.local/share/blesh"
-  tar -xJf "$tmp/blesh.tar.xz" -C "$HOME/.local/share/blesh" --strip-components=1
-fi
+say 'Build bashline Readline extension'
+bash "$repo/bash/.local/share/bashline/build.bash"
 
 say 'Install Neovim 0.12.5, including its runtime files'
 if ! installed nvim 'NVIM v0.12.5'; then

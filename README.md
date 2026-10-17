@@ -4,7 +4,7 @@ Personal configuration managed with [GNU Stow](https://www.gnu.org/software/stow
 
 ## Packages
 
-- `bash` — Bash prompt, completion, history, ble.sh and fzf integration
+- `bash` - Bash prompt, completion, history, bashline and fzf integration
 - `alacritty` — terminal configuration
 - `git` — Git configuration
 - `herdr` — Herdr keybindings and theme
@@ -23,9 +23,11 @@ cd "$HOME/dotfiles"
 ./setup.sh
 ```
 
-`setup.sh` installs Bash completion, Neovim, Alacritty, LazyGit, Herdr, fzf, ble.sh, the configured font, mise runtimes, uv, Pi and Codex, then stows the configs. Pinned prebuilt downloads are checksum-verified; Alacritty is built from its tagged source with a pinned Rust toolchain. It backs up a regular `~/.bashrc` and stops on other Stow conflicts instead of overwriting configs. Re-running it skips matching binary versions; building Alacritty on a fresh machine can take time. See [SETUP.md](SETUP.md) for manual commands and version details.
+`setup.sh` installs Bash completion, Neovim, Alacritty, LazyGit, Herdr, fzf, the configured font, mise runtimes, uv, Pi and Codex, builds bashline, then stows the configs. Pinned prebuilt downloads are checksum-verified; Alacritty is built from its tagged source with a pinned Rust toolchain. It backs up a regular `~/.bashrc` and stops on other Stow conflicts instead of overwriting configs. Re-running it skips matching binary versions; building Alacritty on a fresh machine can take time. See [SETUP.md](SETUP.md) for manual commands and version details.
 
 Use `stow -R -t "$HOME" <package>` to restow a package after changing its layout, and `stow -D -t "$HOME" <package>` to unlink it.
+
+Bash loads [bashline](bash/.local/share/bashline/README.md) automatically for inline history suggestions (Right Arrow to accept) and an fzf completion menu (Tab).
 
 ## Secrets
 

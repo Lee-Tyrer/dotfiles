@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root=$HOME/.local/share/bashline
+bash "$root/build.bash"
+# A nested shell makes exit return to the existing shell.
+exec bash -i "$@"
