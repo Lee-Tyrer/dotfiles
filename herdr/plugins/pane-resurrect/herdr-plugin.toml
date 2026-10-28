@@ -1,0 +1,35 @@
+id = "lee.pane-resurrect"
+name = "Pane Resurrect"
+version = "0.1.0"
+min_herdr_version = "0.9.1"
+description = "Rerun the commands that were running in panes when herdr last stopped"
+platforms = ["linux"]
+
+[[startup]]
+command = ["node", "pane-resurrect.mjs", "startup"]
+
+[[events]]
+on = "pane.closed"
+command = ["node", "pane-resurrect.mjs", "event"]
+
+[[events]]
+on = "pane.exited"
+command = ["node", "pane-resurrect.mjs", "event"]
+
+[[events]]
+on = "pane.moved"
+command = ["node", "pane-resurrect.mjs", "event"]
+
+[[actions]]
+id = "show"
+title = "Show commands that will be restored"
+contexts = ["workspace", "tab", "pane"]
+command = ["node", "pane-resurrect.mjs", "show"]
+
+[[events]]
+on = "tab.closed"
+command = ["node", "pane-resurrect.mjs", "event"]
+
+[[events]]
+on = "workspace.closed"
+command = ["node", "pane-resurrect.mjs", "event"]

@@ -146,3 +146,6 @@ fi
 
 # Activate bashline after other shell initialization.
 source "$HOME/.local/share/bashline/init.bash"
+
+# herdr pane-resurrect: record running commands so herdr can rerun them after a restart
+[[ -f ~/.config/herdr/plugins-local/pane-resurrect/pane-resurrect.bash ]] && source ~/.config/herdr/plugins-local/pane-resurrect/pane-resurrect.bash
