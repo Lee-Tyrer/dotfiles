@@ -1,16 +1,16 @@
 {
-  "lastChangelogVersion": "1.0.0",
+  "lastChangelogVersion": "1.4.0",
   "theme": "kanso-mist",
   "editorPaddingX": 1,
   "quietStartup": true,
-  "tuiMode": "regular",
+  "tuiMode": "fullscreen",
   "terminal": {
     "hyperlinks": true
   },
   "shellCommandPrefix": "export PATH=\"$HOME/.pi/agent/bin:$PATH\"",
-  "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-6-luna",
-  "defaultThinkingLevel": "max",
+  "defaultProvider": "claude-bridge",
+  "defaultModel": "claude-opus-5-5",
+  "defaultThinkingLevel": "medium",
   "compaction": {
     "enabled": true,
     "reserveTokens": 27200,
@@ -19,8 +19,14 @@
   "enabledModels": [
     "openai-codex/gpt-6-luna",
     "openai-codex/gpt-6.1-sol",
-    "openai-codex/gpt-6-astra"
+    "openai-codex/gpt-6-astra",
+    "claude-bridge/claude-haiku-5-5",
+    "claude-bridge/claude-sonnet-5-5",
+    "claude-bridge/claude-opus-5-5"
   ],
-  "packages": ["npm:pi-web-search"],
+  "packages": [
+    "npm:pi-web-search",
+    "npm:pi-claude-bridge"
+  ],
   "hideThinkingBlock": false
 }

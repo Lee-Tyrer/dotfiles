@@ -182,7 +182,7 @@ function installFooter(
 				if (width === 1) return " ";
 				return ` ${truncateToWidth(line, contentWidth, "")} `;
 			};
-			const { input, output, total, hitRate } = usageTotals(ctx);
+			const { input, cacheWrite, output, total, hitRate } = usageTotals(ctx);
 			const context = ctx.getContextUsage();
 			const contextPercent = context?.percent === null || context?.percent === undefined
 				? "?"
@@ -211,7 +211,7 @@ function installFooter(
 				contextIndicator +
 				theme.fg(
 					"dim",
-					`  ${hitText}  Σ ${formatTokens(total)}  ↑ ${formatTokens(input)}  ↓ ${formatTokens(output)}`,
+					`  ${hitText}  Σ ${formatTokens(total)}  ↑ ${formatTokens(input + cacheWrite)}  ↓ ${formatTokens(output)}`,
 				);
 			const gap = Math.max(1, contentWidth - visibleWidth(left) - visibleWidth(right));
 

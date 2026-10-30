@@ -1,6 +1,9 @@
 /**
- * Registers /status to display weekly Codex usage and reset times.
+ * Registers /status for Codex or Claude subscription usage.
  */
+import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 type RateLimitWindow = {
@@ -138,10 +141,93 @@ function formatUsage(data: RateLimit[]): string {
 	return lines.join("\n");
 }
 
+type ClaudeUsageWindow = {
+	usedPercent?: number;
+	resetsAt?: number;
+};
+
+const CLAUDE_WINDOWS = [
+	["five_hour", "5-hour"],
+	["seven_day", "Weekly"],
+] as const;
+
+async function readClaudeUsage(): Promise<Map<string, ClaudeUsageWindow>> {
+	const credentialsPath = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), ".credentials.json");
+	const credentials = JSON.parse(await readFile(credentialsPath, "utf8"));
+	const token = credentials?.claudeAiOauth?.accessToken;
+	if (typeof token !== "string" || !token.trim()) {
+		throw new Error("Claude Code has no OAuth access token; run claude auth login first");
+	}
+
+	const response = await fetch("https://api.anthropic.com/api/oauth/usage", {
+		headers: {
+			Authorization: `Bearer ${token}`,
+			"anthropic-beta": "oauth-2025-04-20",
+			Accept: "application/json",
+		},
+		signal: AbortSignal.timeout(12_000),
+	});
+	if (response.status === 401) {
+		throw new Error("Claude Code's login has expired; run claude auth login again");
+	}
+	if (!response.ok) throw new Error(`Claude usage request failed (HTTP ${response.status})`);
+	const data = await response.json() as Record<string, {
+		utilization?: number;
+		resets_at?: string | null;
+	} | null>;
+	const windows = new Map<string, ClaudeUsageWindow>();
+	for (const [id] of CLAUDE_WINDOWS) {
+		const window = data[id];
+		if (typeof window?.utilization !== "number" || !Number.isFinite(window.utilization)) continue;
+		const resetsAt = window.resets_at ? Date.parse(window.resets_at) / 1_000 : NaN;
+		windows.set(id, {
+			usedPercent: window.utilization,
+			resetsAt: Number.isFinite(resetsAt) ? resetsAt : undefined,
+		});
+	}
+	return windows;
+}
+
+function formatClaudeUsage(windows: Map<string, ClaudeUsageWindow>): string {
+	const reported = CLAUDE_WINDOWS.filter(([id]) => windows.get(id)?.usedPercent !== undefined);
+	if (reported.length === 0) {
+		return "Claude returned no subscription usage windows.";
+	}
+
+	const labelWidth = Math.max(...reported.map(([, label]) => label.length));
+	const lines = ["Claude subscription usage"];
+	for (const [id, label] of reported) {
+		const window = windows.get(id)!;
+		const remaining = Math.max(0, Math.min(100, 100 - window.usedPercent!));
+		const prefix = `  ${label.padEnd(labelWidth)}  `;
+		lines.push(`${prefix}${usageBar(remaining)} ${remaining.toFixed(0)}% remaining`);
+		if (window.resetsAt !== undefined) {
+			lines.push(`${" ".repeat(prefix.length)}resets ${resetTime(window.resetsAt)}`);
+		}
+	}
+	return lines.join("\n");
+}
+
 export default function (pi: ExtensionAPI) {
 	pi.registerCommand("status", {
-		description: "Show weekly Codex usage and reset time",
+		description: "Show subscription usage and reset times for the selected provider",
 		handler: async (_args, ctx) => {
+			if (ctx.model?.provider === "claude-bridge") {
+				ctx.ui.notify("Checking Claude usage...", "info");
+				try {
+					ctx.ui.notify(formatClaudeUsage(await readClaudeUsage()), "info");
+				} catch (error) {
+					ctx.ui.notify(
+						`Could not read Claude usage: ${error instanceof Error ? error.message : String(error)}`,
+						"error",
+					);
+				}
+				return;
+			}
+			if (ctx.model?.provider !== "openai-codex") {
+				ctx.ui.notify("/status supports openai-codex and claude-bridge models.", "info");
+				return;
+			}
 			ctx.ui.notify("Checking Codex usage…", "info");
 			try {
 				const token = await ctx.modelRegistry.getApiKeyForProvider("openai-codex");
