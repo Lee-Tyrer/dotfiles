@@ -35,6 +35,11 @@ return {
     opts = function(_, opts)
       opts.formatters_by_ft["htmldjango"] = { "djlint" }
       opts.formatters_by_ft["html"] = { "djlint" }
+      opts.formatters_by_ft["python"] = { "ruff_organize_imports", "ruff_format" }
+      opts.formatters = opts.formatters or {}
+      local ruff_command = require("conform.util").find_executable({ ".venv/bin/ruff" }, "ruff")
+      opts.formatters.ruff_organize_imports = { command = ruff_command }
+      opts.formatters.ruff_format = { command = ruff_command }
     end,
   },
   -- LSP functionality
