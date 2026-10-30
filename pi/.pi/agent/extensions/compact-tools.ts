@@ -705,7 +705,8 @@ export default function (pi: ExtensionAPI) {
     description: initial.read.description,
     promptSnippet: "Read file contents",
     promptGuidelines: [
-      "Use read to examine files; use sd for simple regex substitutions.",
+      "Use read to examine files.",
+      "Use edit for changes to existing files, including multiple replacements within one file. Use sd only for repetitive substitutions across multiple files. Do not use other shell commands or scripts to modify existing files. Use write only for new files or complete rewrites.",
     ],
     parameters: initial.read.parameters,
     renderShell: "self",
