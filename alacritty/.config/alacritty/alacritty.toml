@@ -40,7 +40,7 @@ blinking = "Off"
 shape = "Block"
 
 [font]
-size = 11.5
+size = 11
 
 [font.normal]
 family = "JetBrainsMono Nerd Font Mono"
@@ -61,3 +61,8 @@ mods = "Control"
 chars = "\u001B[109;5u"
 key = "M"
 mods = "Control"
+
+[[keyboard.bindings]]
+key = "Return"
+mods = "Shift"
+chars = "\u001B\r"
