@@ -14,6 +14,15 @@ const DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api";
 const MAX_REFERENCE_BYTES = 50 * 1024 * 1024;
 const MAX_ATTEMPTS = 3;
 
+// The Codex backend ignores the `size` field and picks dimensions from the prompt, so each size
+// is sent as an aspect hint. Output is close to, not exactly, the named dimensions.
+const SIZE_HINTS = {
+	auto: "",
+	"1024x1024": "Square 1:1 image.",
+	"1536x1024": "Wide 3:2 landscape-orientation image.",
+	"1024x1536": "Tall 2:3 portrait-orientation image.",
+} as const;
+
 type ImageOperation = "generate" | "edit";
 
 const imagegenParameters = Type.Object({
@@ -30,7 +39,11 @@ const imagegenParameters = Type.Object({
 		Type.String({ description: "Workspace-relative output path. A numeric suffix is added for additional images." }),
 	),
 	count: Type.Optional(Type.Integer({ minimum: 1, maximum: 10, description: "Number of variants. Defaults to 1." })),
-	size: Type.Optional(Type.String({ description: "Image size, for example 1024x1024, 1536x1024, or auto." })),
+	size: Type.Optional(
+		Type.Union([Type.Literal("auto"), Type.Literal("1024x1024"), Type.Literal("1536x1024"), Type.Literal("1024x1536")], {
+			description: "Aspect: square, landscape, or portrait. Sent as a prompt hint; output dimensions are approximate.",
+		}),
+	),
 	quality: Type.Optional(Type.Union([Type.Literal("low"), Type.Literal("medium"), Type.Literal("high"), Type.Literal("auto")])),
 	background: Type.Optional(Type.Union([Type.Literal("transparent"), Type.Literal("opaque"), Type.Literal("auto")])),
 });
@@ -210,10 +223,12 @@ async function requestImages(
 
 	const auth = await getCodexAuth(ctx);
 	const requestedBackground = params.background ?? "auto";
+	const sizeHint = SIZE_HINTS[params.size ?? "auto"];
+	const sizedPrompt = sizeHint ? `${sizeHint} ${params.prompt}` : params.prompt;
 	const prompt =
-		requestedBackground === "transparent" && !/transparent/i.test(params.prompt)
-			? `${params.prompt}\nOutput requirement: genuinely transparent background, clean edges, no halo.`
-			: params.prompt;
+		requestedBackground === "transparent" && !/transparent/i.test(sizedPrompt)
+			? `${sizedPrompt}\nOutput requirement: genuinely transparent background, clean edges, no halo.`
+			: sizedPrompt;
 	// Match Codex's native gpt-image-2 request: native transparency is requested in
 	// the prompt while the API background control remains `auto`.
 	const background = requestedBackground === "transparent" && model === DEFAULT_MODEL ? "auto" : requestedBackground;
@@ -222,7 +237,7 @@ async function requestImages(
 		model,
 		background,
 		quality: params.quality ?? "auto",
-		size: params.size ?? "auto",
+		size: "auto",
 	};
 	if ((params.count ?? 1) > 1) body.n = params.count;
 	if (operation === "edit") body.images = await loadReferenceImages(cwd, params.imagePaths ?? []);

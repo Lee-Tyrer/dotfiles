@@ -1,6 +1,6 @@
 ---
 name: imagegen
-description: Generate or edit raster image assets through Pi's ChatGPT/Codex subscription-backed image tool. Use for AI-created photos, illustrations, textures, sprites, product mockups, UI mockups, and transparent cutouts. Do not use for editable SVGs, existing vector/icon systems, or code-native graphics.
+description: Generate or edit raster image assets through Pi's ChatGPT/Codex subscription-backed image tool, or in bulk with the bundled batch script. Use for AI-created photos, illustrations, textures, sprites, product mockups, UI mockups, and transparent cutouts. Do not use for editable SVGs, existing vector/icon systems, or code-native graphics.
 ---
 
 # Image Generation
@@ -8,6 +8,44 @@ description: Generate or edit raster image assets through Pi's ChatGPT/Codex sub
 Use the `imagegen` tool. Pi routes it through the authenticated `openai-codex` ChatGPT backend at Codex's `/backend-api/codex/images/generations` or `/edits` route. It uses the existing ChatGPT/Codex OAuth session and does **not** use `OPENAI_API_KEY` or OpenAI Platform API credits.
 
 This is subscription-backed usage, so ChatGPT/Codex plan limits still apply. If the tool says login is required, use `/login` and choose `OpenAI (ChatGPT Plus/Pro)`. Do not silently switch to the paid Platform API.
+
+## Tool or batch script
+
+- **One or a few images:** use the `imagegen` tool. You see each result inline and can iterate.
+- **Many images (roughly 5+), or the user asks for a batch:** use `scripts/imagegen.ts` in this skill directory. One process runs all requests in parallel, so never spawn extra agents or sessions for bulk generation.
+
+## Batch script
+
+Resolve `scripts/imagegen.ts` against this skill's directory and run it with `node` (Node 22 runs `.ts` directly). Run `node <skill-dir>/scripts/imagegen.ts --help` for all options.
+
+```bash
+# single image
+node <skill-dir>/scripts/imagegen.ts --prompt "..." --out generated/cat.png --size 1024x1536 --quality low
+
+# batch: one JSON job per line
+node <skill-dir>/scripts/imagegen.ts --batch generated/jobs.jsonl --concurrency 4
+```
+
+Job line fields: `prompt` and `out` are required; `edit` (array of image paths), `size`, `quality`, `background`, `count`, and `model` are optional and match the tool parameters.
+
+```json
+{"prompt": "Head-and-shoulders studio portrait of an elderly man, grey background", "out": "generated/faces/face-001.png", "size": "1024x1024", "quality": "low"}
+```
+
+Batch workflow:
+
+1. Write the jobs file into the workspace, with one distinct prompt and unique `out` path per image.
+2. Run the script. It prints one line per finished job and a summary with wall time.
+3. Existing outputs are skipped, so rerunning the same file resumes an interrupted batch. Failed jobs are written to `<jobs>.failed.jsonl`; rerun that file to retry them. The exit code is non-zero if any job failed.
+4. Inspect a few sample outputs with the read tool rather than every image.
+5. Report the output directory, counts, and wall time.
+
+Script notes:
+
+- Paths are relative to the current directory. Outputs are never overwritten.
+- It reads the access token from `~/.pi/agent/auth.json` and never refreshes it. If it reports an expired token, ask the user to open pi so the login refreshes, then rerun.
+- Default concurrency is 4. Each low-quality image takes about 15s, so 4 in parallel gives roughly 4x throughput. Rate-limit (429) responses are retried with backoff.
+- Each PNG is about 2 MB.
 
 ## Workflow
 
@@ -27,11 +65,12 @@ This is subscription-backed usage, so ChatGPT/Codex plan limits still apply. If 
 
 - Default model: `gpt-image-2`.
 - Default size, quality, and background: `auto`.
+- The Codex backend ignores the `size` request field and always renders about 1.57 megapixels, picking the shape from the prompt. The tool and the batch script both turn `size` into an aspect hint in the prompt and only accept `auto`, `1024x1024` (renders about 1254x1254), `1536x1024`, and `1024x1536`. Smaller resolutions are not available; resize locally if needed.
 - Saving is the default: supply `outputPath` unless the user explicitly requests a preview-only result.
 - Up to five local reference/edit images are supported, matching Codex's built-in tool.
 - Generated output is returned as PNG image data. Use a `.png` output path.
 - `count` creates variants of one prompt; distinct assets need separate calls.
-- `size`, `quality`, `background`, and `model` may be supplied when useful, but the normal path should stay on the Codex-backed defaults.
+- `quality`, `background`, and `model` may be supplied when useful, but the normal path should stay on the Codex-backed defaults.
 - The tool adds the ChatGPT account header and Codex image-turn header automatically; never ask the user to paste tokens or API keys.
 
 ## Prompt structure
@@ -93,3 +132,4 @@ Match Codex's native path: request a genuinely transparent background in the pro
 - Preview-only images may omit `outputPath`; keep the generated result inline only when the user explicitly requests preview-only output.
 - Never overwrite an existing output unless the user explicitly requests replacement.
 - Always report the final workspace path for project assets and whether the ChatGPT/Codex subscription-backed route was used.
+- For batches, report the output directory, ok/skipped/failed counts, and wall time instead of listing every file.
