@@ -10,8 +10,8 @@ esac
 
 # Make user-installed tools available even in non-login terminal shells.
 case ":$PATH:" in
-  *":$HOME/.local/bin:"*) ;;
-  *) export PATH="$HOME/.local/bin:$PATH" ;;
+*":$HOME/.local/bin:"*) ;;
+*) export PATH="$HOME/.local/bin:$PATH" ;;
 esac
 
 # Machine-local exports and secrets stay outside the dotfiles repository.
