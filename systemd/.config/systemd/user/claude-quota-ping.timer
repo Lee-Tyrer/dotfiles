@@ -1,0 +1,11 @@
+[Unit]
+Description=Ping Claude daily at 04:00 and 14:00 local time
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+OnCalendar=*-*-* 14:00:00
+AccuracySec=1s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

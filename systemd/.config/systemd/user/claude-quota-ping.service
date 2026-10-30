@@ -1,0 +1,10 @@
+[Unit]
+Description=Start Claude subscription usage window with a Haiku request
+
+[Service]
+Type=oneshot
+RuntimeDirectory=claude-quota-ping
+WorkingDirectory=%t/claude-quota-ping
+Environment=MAX_THINKING_TOKENS=0
+ExecStart=%h/.local/bin/claude --print --model claude-haiku-5-5 --tools "" --strict-mcp-config --setting-sources "" --settings '{"alwaysThinkingEnabled":false}' --no-session-persistence --system-prompt "Reply with only OK." "Reply with only OK."
+TimeoutStartSec=120
