@@ -27,7 +27,7 @@ const COMPACTION_CRITICAL_RATIO = 0.98;
 
 // Idle time before the provider's prompt cache expires. Providers do not report it, so these are estimates.
 const CACHE_TTL_MS: Record<string, number> = {
-	"openai-codex": 30 * 60_000,
+	"openai-codex": 60 * 60_000,
 	"claude-bridge": 60 * 60_000,
 };
 
@@ -112,8 +112,7 @@ type CacheTtlState = {
 	// provider/model that answered last, and when its cache is expected to expire.
 	model?: string;
 	expiresAt?: number;
-	pendingModel?: string;
-	timer?: ReturnType<typeof setInterval>;
+	timer?: ReturnType<typeof setTimeout>;
 	requestRender?: () => void;
 };
 
@@ -399,13 +398,13 @@ export default function (pi: ExtensionAPI) {
 	};
 
 	const stopCacheTimer = () => {
-		if (cache.timer !== undefined) clearInterval(cache.timer);
+		if (cache.timer !== undefined) clearTimeout(cache.timer);
 		cache.timer = undefined;
 	};
 
 	pi.on("session_start", (event, ctx) => {
 		stopCacheTimer();
-		cache.model = cache.expiresAt = cache.pendingModel = undefined;
+		cache.model = cache.expiresAt = undefined;
 		stopTimer();
 		stopTaskTitleTransition(work);
 		work.startedAt = undefined;
@@ -449,22 +448,22 @@ export default function (pi: ExtensionAPI) {
 	pi.on("message_end", (event) => {
 		const message = event.message;
 		if (message.role !== "assistant" || message.stopReason === "error" || message.stopReason === "aborted") return;
-		if (CACHE_TTL_MS[message.provider]) cache.pendingModel = `${message.provider}/${message.model}`;
+		const ttl = CACHE_TTL_MS[message.provider];
+		if (!ttl) return;
+		// Every request refreshes the provider cache, so restart the clock from when this request started.
+		cache.model = `${message.provider}/${message.model}`;
+		cache.expiresAt = message.timestamp + ttl;
+		stopCacheTimer();
+		// The footer shows whole minutes counted back from expiresAt, so wake on each of those boundaries.
+		const tick = () => {
+			cache.requestRender?.();
+			const remaining = cache.expiresAt! - Date.now();
+			cache.timer = remaining > 0 ? setTimeout(tick, remaining % 60_000 || 60_000) : undefined;
+		};
+		tick();
 	});
 
 	pi.on("agent_settled", () => {
-		if (cache.pendingModel) {
-			cache.model = cache.pendingModel;
-			cache.expiresAt = Date.now() + CACHE_TTL_MS[cache.pendingModel.split("/")[0]!]!;
-			cache.pendingModel = undefined;
-			stopCacheTimer();
-			// TTLs are whole minutes, so ticking every minute from now lands on each displayed change.
-			cache.timer = setInterval(() => {
-				cache.requestRender?.();
-				if (Date.now() >= cache.expiresAt!) stopCacheTimer();
-			}, 60_000);
-			cache.requestRender?.();
-		}
 		if (work.startedAt === undefined) return;
 		const duration = Date.now() - work.startedAt;
 		stopTimer();
