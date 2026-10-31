@@ -1,3 +1,6 @@
+/**
+ * Resumes a Claude turn stopped by the five-hour usage limit, one minute after the limit resets.
+ */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 const PREFIX = "anthropic-ratelimit-unified-";
@@ -7,22 +10,20 @@ const STATUS = "claude-auto-resume";
 export default function (pi: ExtensionAPI) {
 	let rejectedReset: number | undefined;
 	let failed = false;
-	let timer: ReturnType<typeof setInterval> | undefined;
-	let pending: { at: number; session: string; leaf: string | null; model: string } | undefined;
-	let statusContext: ExtensionContext | undefined;
+	let pending: { at: number; ctx: ExtensionContext; timer: ReturnType<typeof setInterval> } | undefined;
 
 	function cancel() {
-		if (timer !== undefined) clearInterval(timer);
-		timer = undefined;
+		if (pending) {
+			clearInterval(pending.timer);
+			pending.ctx.ui.setStatus(STATUS, undefined);
+		}
 		pending = undefined;
 		rejectedReset = undefined;
 		failed = false;
-		statusContext?.ui.setStatus(STATUS, undefined);
-		statusContext = undefined;
 	}
 
+	// Any new activity, model change, or session change invalidates a pending resume.
 	pi.on("input", () => { cancel(); });
-	pi.on("before_agent_start", () => { cancel(); });
 	pi.on("agent_start", () => { cancel(); });
 	pi.on("model_select", () => { cancel(); });
 	pi.on("session_before_switch", () => { cancel(); });
@@ -39,11 +40,8 @@ export default function (pi: ExtensionAPI) {
 		rejectedReset = undefined;
 		const claim = headers[`${PREFIX}representative-claim`];
 		if (status !== "rejected" || (claim !== "five_hour" && claim !== "5h")) return;
-		const seconds = Number(headers[`${PREFIX}reset`] ?? headers[`${PREFIX}5h-reset`]);
-		const reset = seconds * 1_000;
-		if (Number.isSafeInteger(reset) && reset > 0 && reset + BUFFER_MS > Date.now()) {
-			rejectedReset = reset;
-		}
+		const reset = Number(headers[`${PREFIX}reset`] ?? headers[`${PREFIX}5h-reset`]) * 1_000;
+		if (reset + BUFFER_MS > Date.now()) rejectedReset = reset;
 	});
 
 	pi.on("message_end", (event) => {
@@ -58,35 +56,21 @@ export default function (pi: ExtensionAPI) {
 			return;
 		}
 		const at = rejectedReset + BUFFER_MS;
-		pending = {
-			at,
-			session: ctx.sessionManager.getSessionId(),
-			leaf: ctx.sessionManager.getLeafId(),
-			model: ctx.model.id,
-		};
-		statusContext = ctx;
 		ctx.ui.notify(`Claude will resume at ${new Date(at).toLocaleTimeString()} (one minute after reset). /claude-auto-resume cancel to cancel.`, "info");
 
+		let shown: string | undefined;
 		const tick = () => {
-			const resume = pending;
-			if (!resume) return;
-			if (ctx.sessionManager.getSessionId() !== resume.session
-				|| ctx.sessionManager.getLeafId() !== resume.leaf
-				|| ctx.model?.provider !== "claude-bridge" || ctx.model.id !== resume.model
-				|| !ctx.isIdle()) {
+			const remaining = at - Date.now();
+			if (remaining <= 0) {
 				cancel();
+				void pi.sendUserMessage("Continue the task interrupted by the Claude five-hour usage limit. Pick up from the existing conversation.");
 				return;
 			}
-			const remaining = resume.at - Date.now();
-			if (remaining > 0) {
-				const minutes = Math.ceil(remaining / 60_000);
-				ctx.ui.setStatus(STATUS, `Claude resumes in ${minutes}m`);
-				return;
-			}
-			cancel();
-			pi.sendUserMessage("Continue the task interrupted by the Claude five-hour usage limit. Pick up from the existing conversation.");
+			const status = `Claude resumes in ${Math.ceil(remaining / 60_000)}m`;
+			if (status !== shown) ctx.ui.setStatus(STATUS, status);
+			shown = status;
 		};
-		timer = setInterval(tick, 1_000);
+		pending = { at, ctx, timer: setInterval(tick, 1_000) };
 		tick();
 	});
 

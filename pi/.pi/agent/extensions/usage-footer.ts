@@ -1,13 +1,15 @@
 /**
- * Adds a TUI footer with model, context, token usage, cache, and work-time details.
+ * Adds a TUI footer with model, extension statuses, context, token usage, cache TTL, and work-time details.
+ * Also reports the previous session's token usage when a new session starts.
  */
-import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
 	CustomEditor,
 	getAgentDir,
+	SessionManager,
 	SettingsManager,
 	type ExtensionAPI,
 	type ExtensionContext,
+	type SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
@@ -16,14 +18,18 @@ type Usage = {
 	output: number;
 	cacheRead: number;
 	cacheWrite: number;
-	reasoning?: number;
-	cost?: { total?: number };
 };
 
 // Ratios are measured against the usable context before auto-compaction, not
 // against the model's raw context window percentage.
 const COMPACTION_WARNING_RATIO = 0.9;
 const COMPACTION_CRITICAL_RATIO = 0.98;
+
+// Idle time before the provider's prompt cache expires. Providers do not report it, so these are estimates.
+const CACHE_TTL_MS: Record<string, number> = {
+	"openai-codex": 30 * 60_000,
+	"claude-bridge": 60 * 60_000,
+};
 
 const formatTokens = (count: number): string => {
 	if (count < 1_000) return `${count}`;
@@ -33,79 +39,39 @@ const formatTokens = (count: number): string => {
 	return `${Math.round(count / 1_000_000)}M`;
 };
 
-function usageTotals(ctx: ExtensionContext): {
-	input: number;
-	output: number;
-	cacheRead: number;
-	cacheWrite: number;
-	reasoning?: number;
-	total: number;
-	cost: number;
-	hitRate?: number;
-} {
-	let input = 0;
-	let output = 0;
-	let cacheRead = 0;
-	let cacheWrite = 0;
-	let reasoning = 0;
-	let reasoningReported = false;
-	let cost = 0;
-	let latestAssistantUsage: Usage | undefined;
-
-	for (const entry of ctx.sessionManager.getBranch()) {
-		if (entry.type === "message") {
-			if (entry.message.role === "assistant") {
-				const usage = (entry.message as AssistantMessage).usage;
-				input += usage.input;
-				output += usage.output;
-				cacheRead += usage.cacheRead;
-				cacheWrite += usage.cacheWrite;
-				if (usage.reasoning !== undefined) {
-					reasoning += usage.reasoning;
-					reasoningReported = true;
-				}
-				cost += usage.cost?.total ?? 0;
-				latestAssistantUsage = usage;
-			} else if (entry.message.role === "toolResult" && entry.message.usage) {
-				input += entry.message.usage.input;
-				output += entry.message.usage.output;
-				cacheRead += entry.message.usage.cacheRead;
-				cacheWrite += entry.message.usage.cacheWrite;
-				if (entry.message.usage.reasoning !== undefined) {
-					reasoning += entry.message.usage.reasoning;
-					reasoningReported = true;
-				}
-				cost += entry.message.usage.cost?.total ?? 0;
-			}
-		} else if ((entry.type === "compaction" || entry.type === "branch_summary") && entry.usage) {
-			input += entry.usage.input;
-			output += entry.usage.output;
-			cacheRead += entry.usage.cacheRead;
-			cacheWrite += entry.usage.cacheWrite;
-			if (entry.usage.reasoning !== undefined) {
-				reasoning += entry.usage.reasoning;
-				reasoningReported = true;
-			}
-			cost += entry.usage.cost?.total ?? 0;
+function usageTotals(entries: SessionEntry[]) {
+	const totals: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+	let latest: Usage | undefined;
+	const add = (usage: Usage | undefined) => {
+		if (!usage) return;
+		totals.input += usage.input;
+		totals.output += usage.output;
+		totals.cacheRead += usage.cacheRead;
+		totals.cacheWrite += usage.cacheWrite;
+	};
+	for (const entry of entries) {
+		if (entry.type === "message" && entry.message.role === "assistant") {
+			add(entry.message.usage);
+			latest = entry.message.usage;
+		} else if (entry.type === "message" && entry.message.role === "toolResult") {
+			add(entry.message.usage);
+		} else if (entry.type === "compaction" || entry.type === "branch_summary") {
+			add(entry.usage);
 		}
 	}
-
-	const total = input + output + cacheRead + cacheWrite;
-	if (!latestAssistantUsage) {
-		return { input, output, cacheRead, cacheWrite, reasoning: reasoningReported ? reasoning : undefined, total, cost };
-	}
-	const promptTokens =
-		latestAssistantUsage.input + latestAssistantUsage.cacheRead + latestAssistantUsage.cacheWrite;
+	const promptTokens = latest ? latest.input + latest.cacheRead + latest.cacheWrite : 0;
 	return {
-		input,
-		output,
-		cacheRead,
-		cacheWrite,
-		reasoning: reasoningReported ? reasoning : undefined,
-		total,
-		cost,
-		hitRate: promptTokens > 0 ? (latestAssistantUsage.cacheRead / promptTokens) * 100 : undefined,
+		...totals,
+		total: totals.input + totals.output + totals.cacheRead + totals.cacheWrite,
+		hitRate: latest && promptTokens > 0 ? (latest.cacheRead / promptTokens) * 100 : undefined,
 	};
+}
+
+function previousSessionSummary(sessionFile: string): string {
+	const totals = usageTotals(SessionManager.open(sessionFile).getBranch());
+	const count = (tokens: number) => tokens.toLocaleString();
+	return `Previous session: ${count(totals.total)} tokens (${count(totals.input)} input, ${count(totals.output)} output, `
+		+ `${count(totals.cacheRead)} cache read, ${count(totals.cacheWrite)} cache write)`;
 }
 
 class ShipItEditor extends CustomEditor {
@@ -125,22 +91,30 @@ class ShipItEditor extends CustomEditor {
 	}
 }
 
+
 type TaskTitleTransition = {
 	from: string;
 	to: string;
 	startedAt: number;
 };
 
+
 type WorkTimerState = {
+	ui?: ExtensionContext["ui"];
 	startedAt?: number;
 	taskTitle?: string;
 	titleTransition?: TaskTitleTransition;
 	titleTransitionTimer?: ReturnType<typeof setInterval>;
-	getTaskTitleViewportWidth?: () => number;
-	clearWorkedFor?: () => void;
-	setWorkedFor?: (duration: number, title?: string) => void;
-	setWorkingMessage?: (message?: string) => void;
 	timer?: ReturnType<typeof setInterval>;
+};
+
+type CacheTtlState = {
+	// provider/model that answered last, and when its cache is expected to expire.
+	model?: string;
+	expiresAt?: number;
+	pendingModel?: string;
+	timer?: ReturnType<typeof setInterval>;
+	requestRender?: () => void;
 };
 
 const TASK_TITLE_SLIDE_FRAME_MS = 32;
@@ -158,11 +132,8 @@ const formatDuration = (milliseconds: number): string => {
 		.join(" ");
 };
 
-function installFooter(
-	ctx: ExtensionContext,
-	isPlanMode: () => boolean,
-	isFastMode: () => boolean,
-): void {
+
+function installFooter(ctx: ExtensionContext, cache: CacheTtlState): void {
 	if (ctx.mode !== "tui") return;
 
 	// Load the same merged global/project setting Pi uses. The manager is
@@ -173,67 +144,74 @@ function installFooter(
 			projectTrusted: ctx.isProjectTrusted(),
 		}).getCompactionSettings();
 
-	ctx.ui.setFooter((_tui, theme) => ({
-		invalidate() {},
-		render(width: number): string[] {
-			const contentWidth = Math.max(0, width - 2);
-			const pad = (line: string): string => {
-				if (width <= 0) return "";
-				if (width === 1) return " ";
-				return ` ${truncateToWidth(line, contentWidth, "")} `;
-			};
-			const { input, cacheWrite, output, total, hitRate } = usageTotals(ctx);
-			const context = ctx.getContextUsage();
-			const contextPercent = context?.percent === null || context?.percent === undefined
-				? "?"
-				: `${context.percent.toFixed(1)}%`;
-			let contextColor: "dim" | "warning" | "error" = "dim";
-			if (compactionEnabled && context?.tokens !== null && context?.tokens !== undefined) {
-				const compactionLimit = context.contextWindow - compactionReserveTokens;
-				if (compactionLimit > 0) {
-					const compactionRatio = context.tokens / compactionLimit;
-					if (compactionRatio >= COMPACTION_CRITICAL_RATIO) contextColor = "error";
-					else if (compactionRatio >= COMPACTION_WARNING_RATIO) contextColor = "warning";
+	ctx.ui.setFooter((tui, theme, footerData) => {
+		cache.requestRender = () => tui.requestRender();
+		return {
+			invalidate() {},
+			render(width: number): string[] {
+				const contentWidth = Math.max(0, width - 2);
+				const pad = (line: string): string => {
+					if (width <= 0) return "";
+					if (width === 1) return " ";
+					return ` ${truncateToWidth(line, contentWidth, "")} `;
+				};
+				const { input, cacheWrite, output, total, hitRate } = usageTotals(ctx.sessionManager.getBranch());
+				const context = ctx.getContextUsage();
+				const contextPercent = context?.percent === null || context?.percent === undefined
+					? "?"
+					: `${context.percent.toFixed(1)}%`;
+				let contextColor: "dim" | "warning" | "error" = "dim";
+				if (compactionEnabled && context?.tokens !== null && context?.tokens !== undefined) {
+					const compactionLimit = context.contextWindow - compactionReserveTokens;
+					if (compactionLimit > 0) {
+						const compactionRatio = context.tokens / compactionLimit;
+						if (compactionRatio >= COMPACTION_CRITICAL_RATIO) contextColor = "error";
+						else if (compactionRatio >= COMPACTION_WARNING_RATIO) contextColor = "warning";
+					}
 				}
-			}
-			const contextIndicator = theme.fg(
-				contextColor,
-				`${contextColor === "dim" ? "◉" : "⚠"} ${contextPercent}`,
-			);
-			const hitText = hitRate === undefined ? "⚡?" : `⚡${hitRate.toFixed(1)}%`;
-			const model = ctx.model?.id ?? "no model";
-			const thinking = ctx.thinkingLevel ?? "off";
-
-			const plan = isPlanMode() ? theme.fg("warning", " PLAN MODE") : "";
-			const fast = isFastMode() ? theme.fg("accent", " FAST MODE") : "";
-			const left = [theme.fg("accent", model), theme.fg("muted", ` (${thinking})`), plan, fast].join("");
-			const right =
-				contextIndicator +
-				theme.fg(
-					"dim",
-					`  ${hitText}  Σ ${formatTokens(total)}  ↑ ${formatTokens(input + cacheWrite)}  ↓ ${formatTokens(output)}`,
+				const contextIndicator = theme.fg(
+					contextColor,
+					`${contextColor === "dim" ? "◉" : "⚠"} ${contextPercent}`,
 				);
-			const gap = Math.max(1, contentWidth - visibleWidth(left) - visibleWidth(right));
+				const hitText = hitRate === undefined ? "⚡?" : `⚡${hitRate.toFixed(1)}%`;
+				const model = ctx.model?.id ?? "no model";
+				const thinking = ctx.thinkingLevel ?? "off";
 
-			let statsLine: string;
-			if (visibleWidth(left) + visibleWidth(right) + 1 <= contentWidth) {
-				statsLine = left + " ".repeat(gap) + right;
-			} else {
-				const rightWidth = Math.min(visibleWidth(right), contentWidth);
-				const availableLeft = Math.max(0, contentWidth - rightWidth - 1);
-				const clippedLeft = truncateToWidth(left, availableLeft, "");
-				statsLine = truncateToWidth(
-					clippedLeft +
-						" ".repeat(Math.max(1, contentWidth - visibleWidth(clippedLeft) - rightWidth)) +
-						right,
-					contentWidth,
-					"",
-				);
-			}
+				const statuses = [...footerData.getExtensionStatuses().values()].map((status) => ` ${status}`).join("");
+				const left = theme.fg("accent", model) + theme.fg("muted", ` (${thinking})`) + statuses;
+				const ttlActive = cache.expiresAt !== undefined && cache.model === `${ctx.model?.provider}/${ctx.model?.id}`;
+				const remaining = ttlActive ? Math.max(0, cache.expiresAt! - Date.now()) : undefined;
+				const ttl = remaining === undefined
+					? ""
+					: theme.fg(remaining === 0 ? "error" : "dim", `TTL: ${Math.ceil(remaining / 60_000)}m  `);
+				const right =
+					ttl + contextIndicator +
+					theme.fg(
+						"dim",
+						`  ${hitText}  Σ ${formatTokens(total)}  ↑ ${formatTokens(input + cacheWrite)}  ↓ ${formatTokens(output)}`,
+					);
+				const gap = Math.max(1, contentWidth - visibleWidth(left) - visibleWidth(right));
 
-			return [pad(statsLine)];
-		},
-	}));
+				let statsLine: string;
+				if (visibleWidth(left) + visibleWidth(right) + 1 <= contentWidth) {
+					statsLine = left + " ".repeat(gap) + right;
+				} else {
+					const rightWidth = Math.min(visibleWidth(right), contentWidth);
+					const availableLeft = Math.max(0, contentWidth - rightWidth - 1);
+					const clippedLeft = truncateToWidth(left, availableLeft, "");
+					statsLine = truncateToWidth(
+						clippedLeft +
+							" ".repeat(Math.max(1, contentWidth - visibleWidth(clippedLeft) - rightWidth)) +
+							right,
+						contentWidth,
+						"",
+					);
+				}
+
+				return [pad(statsLine)];
+			},
+		};
+	});
 }
 
 function splitTaskTitle(text: string): string[] {
@@ -351,7 +329,7 @@ function displayedWorkingMessage(work: WorkTimerState, duration: string): string
 function updateWorkingMessage(work: WorkTimerState): void {
 	if (work.startedAt === undefined) return;
 	const duration = formatDuration(Date.now() - work.startedAt);
-	work.setWorkingMessage?.(displayedWorkingMessage(work, duration));
+	work.ui?.setWorkingMessage(displayedWorkingMessage(work, duration));
 }
 
 function startTaskTitleTransition(work: WorkTimerState, title: string): void {
@@ -364,10 +342,7 @@ function startTaskTitleTransition(work: WorkTimerState, title: string): void {
 		return;
 	}
 
-	const viewportWidth = Math.max(
-		1,
-		work.getTaskTitleViewportWidth?.() ?? DEFAULT_TASK_TITLE_VIEWPORT_WIDTH,
-	);
+	const viewportWidth = Math.max(20, Math.min(DEFAULT_TASK_TITLE_VIEWPORT_WIDTH, (process.stdout.columns ?? 80) - 16));
 	const from = truncateToWidth(previousTitle, viewportWidth, "");
 	const to = truncateToWidth(title, viewportWidth, "");
 	if (!from || !to || from === to) {
@@ -402,37 +377,18 @@ function createWorkedForWidget(duration: number, title?: string) {
 	});
 }
 
+
 export default function (pi: ExtensionAPI) {
-	let planModeEnabled = false;
-	pi.events.on("plan-mode:changed", (data) => {
-		if (typeof data !== "object" || data === null) return;
-		const enabled = (data as { enabled?: unknown }).enabled;
-		if (typeof enabled === "boolean") planModeEnabled = enabled;
-	});
-	let fastModeEnabled = false;
-	pi.events.on("fast-mode:changed", (data) => {
-		if (typeof data !== "object" || data === null) return;
-		const enabled = (data as { enabled?: unknown }).enabled;
-		if (typeof enabled === "boolean") fastModeEnabled = enabled;
-	});
-
 	const work: WorkTimerState = {};
-	pi.events.on("task-title:changed", (data) => {
-		if (typeof data !== "object" || data === null) return;
-		const taskTitle = data as { title?: unknown; transition?: unknown };
-		if (taskTitle.title !== undefined && typeof taskTitle.title !== "string") return;
-		if (taskTitle.transition !== undefined && typeof taskTitle.transition !== "boolean") return;
+	const cache: CacheTtlState = {};
 
-		const previousTitle = work.taskTitle;
-		if (
-			taskTitle.transition === true &&
-			typeof taskTitle.title === "string" &&
-			previousTitle !== taskTitle.title
-		) {
-			startTaskTitleTransition(work, taskTitle.title);
+	pi.events.on("task-title:changed", (data) => {
+		const { title, transition } = data as { title?: string; transition?: boolean };
+		if (transition && title !== undefined && work.taskTitle !== title) {
+			startTaskTitleTransition(work, title);
 		} else {
 			stopTaskTitleTransition(work);
-			work.taskTitle = taskTitle.title;
+			work.taskTitle = title;
 			updateWorkingMessage(work);
 		}
 	});
@@ -442,28 +398,34 @@ export default function (pi: ExtensionAPI) {
 		work.timer = undefined;
 	};
 
-	pi.on("session_start", (_event, ctx) => {
+	const stopCacheTimer = () => {
+		if (cache.timer !== undefined) clearInterval(cache.timer);
+		cache.timer = undefined;
+	};
+
+	pi.on("session_start", (event, ctx) => {
+		stopCacheTimer();
+		cache.model = cache.expiresAt = cache.pendingModel = undefined;
 		stopTimer();
 		stopTaskTitleTransition(work);
 		work.startedAt = undefined;
 		work.taskTitle = undefined;
-		work.getTaskTitleViewportWidth = () =>
-			Math.max(20, Math.min(DEFAULT_TASK_TITLE_VIEWPORT_WIDTH, (process.stdout.columns ?? 80) - 16));
-		work.setWorkingMessage = (message?: string) => ctx.ui.setWorkingMessage(message);
-		work.clearWorkedFor = () => ctx.ui.setWidget("work-timer", undefined);
-		work.setWorkedFor = (duration, title) => ctx.ui.setWidget("work-timer", createWorkedForWidget(duration, title));
-		work.clearWorkedFor();
-		installFooter(ctx, () => planModeEnabled, () => fastModeEnabled);
+		work.ui = ctx.ui;
+		ctx.ui.setWidget("work-timer", undefined);
+		installFooter(ctx, cache);
 		ctx.ui.setEditorComponent((tui, theme, keybindings) => {
 			const editor = new ShipItEditor(tui, theme, keybindings, { embedWorkingStatus: true });
 			editor.placeholder = "What are we building?";
 			editor.placeholderStyle = (text) => ctx.ui.theme.fg("dim", text);
 			return editor;
 		});
+		if (event.reason === "new" && event.previousSessionFile) {
+			ctx.ui.notify(previousSessionSummary(event.previousSessionFile), "info");
+		}
 	});
 
 	pi.on("session_compact", (event, ctx) => {
-		const { total } = usageTotals(ctx);
+		const { total } = usageTotals(ctx.sessionManager.getBranch());
 		const kind = event.reason === "threshold"
 			? "Auto-compaction"
 			: event.reason === "overflow"
@@ -477,26 +439,45 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("agent_start", () => {
 		if (work.startedAt !== undefined) return;
-		work.clearWorkedFor?.();
+		work.ui?.setWidget("work-timer", undefined);
 		work.startedAt = Date.now();
 		updateWorkingMessage(work);
 		stopTimer();
 		work.timer = setInterval(() => updateWorkingMessage(work), 1_000);
 	});
 
+	pi.on("message_end", (event) => {
+		const message = event.message;
+		if (message.role !== "assistant" || message.stopReason === "error" || message.stopReason === "aborted") return;
+		if (CACHE_TTL_MS[message.provider]) cache.pendingModel = `${message.provider}/${message.model}`;
+	});
+
 	pi.on("agent_settled", () => {
+		if (cache.pendingModel) {
+			cache.model = cache.pendingModel;
+			cache.expiresAt = Date.now() + CACHE_TTL_MS[cache.pendingModel.split("/")[0]!]!;
+			cache.pendingModel = undefined;
+			stopCacheTimer();
+			// TTLs are whole minutes, so ticking every minute from now lands on each displayed change.
+			cache.timer = setInterval(() => {
+				cache.requestRender?.();
+				if (Date.now() >= cache.expiresAt!) stopCacheTimer();
+			}, 60_000);
+			cache.requestRender?.();
+		}
 		if (work.startedAt === undefined) return;
 		const duration = Date.now() - work.startedAt;
 		stopTimer();
 		stopTaskTitleTransition(work);
 		work.startedAt = undefined;
-		work.setWorkingMessage?.();
-		work.setWorkedFor?.(duration, work.taskTitle);
+		work.ui?.setWorkingMessage();
+		work.ui?.setWidget("work-timer", createWorkedForWidget(duration, work.taskTitle));
 	});
 
 	pi.on("session_shutdown", () => {
+		stopCacheTimer();
 		stopTimer();
 		stopTaskTitleTransition(work);
-		work.setWorkingMessage?.();
+		work.ui?.setWorkingMessage();
 	});
 }

@@ -1,12 +1,13 @@
-import { uuidv7, type Usage } from "@earendil-works/pi-ai";
-import {
-  getAgentDir,
-  type ExtensionAPI,
-  type ExtensionContext,
-  type SessionEntry,
+/**
+ * Publishes a short task title for the working indicator: the prompt itself, then a
+ * model-written summary for long prompts.
+ */
+import { uuidv7 } from "@earendil-works/pi-ai";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  SessionEntry,
 } from "@earendil-works/pi-coding-agent";
-import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 
 const TASK_TITLE_EVENT = "task-title:changed";
 const SUMMARY_MODEL_CANDIDATES = [
@@ -17,7 +18,6 @@ const SUMMARY_THRESHOLD = 80;
 const MAX_PROMPT_CHARS = 4_000;
 const MAX_TITLE_CHARS = 90;
 const SUMMARY_TIMEOUT_MS = 8_000;
-const SUMMARY_USAGE_PATH = join(getAgentDir(), "question-summary-usage.json");
 
 const SUMMARY_SYSTEM_PROMPT = [
   "Create a compact UI title for a coding-agent task.",
@@ -28,61 +28,12 @@ const SUMMARY_SYSTEM_PROMPT = [
   "Do not use markdown, quotes, a title/summary label, a preamble, or a trailing period.",
 ].join(" ");
 
-type TaskTitleEvent = {
-  title: string | undefined;
-  transition?: boolean;
-};
-
-type SummaryUsageEntry = {
-  timestamp: string;
-  tokens: number;
-  cost: number;
-};
-
-let summaryUsageWrite = Promise.resolve();
-
-function logSummaryUsage(usage: Usage): void {
-  const entry: SummaryUsageEntry = {
-    timestamp: new Date().toISOString(),
-    tokens: usage.totalTokens,
-    cost: usage.cost.total,
-  };
-
-  summaryUsageWrite = summaryUsageWrite
-    .then(async () => {
-      let entries: SummaryUsageEntry[] = [];
-      try {
-        const parsed: unknown = JSON.parse(
-          await readFile(SUMMARY_USAGE_PATH, "utf8"),
-        );
-        if (Array.isArray(parsed)) entries = parsed as SummaryUsageEntry[];
-      } catch {
-        // Create the file on first use, or recover from invalid JSON.
-      }
-      entries.push(entry);
-      await writeFile(
-        SUMMARY_USAGE_PATH,
-        `${JSON.stringify(entries, null, 2)}\n`,
-        {
-          encoding: "utf8",
-          mode: 0o600,
-        },
-      );
-    })
-    .catch(() => {
-      // Usage logging must never affect the title or agent run.
-    });
-}
-
 function publishTitle(
   pi: ExtensionAPI,
   title: string | undefined,
-  options: Pick<TaskTitleEvent, "transition"> = {},
+  transition = false,
 ): void {
-  pi.events.emit(TASK_TITLE_EVENT, {
-    title,
-    ...options,
-  } satisfies TaskTitleEvent);
+  pi.events.emit(TASK_TITLE_EVENT, { title, transition });
 }
 
 function normalizePrompt(prompt: string): string {
@@ -136,11 +87,9 @@ function truncateTitle(value: string): string {
 }
 
 function fallbackTitle(prompt: string, hasImages: boolean): string {
-  const normalized = normalizePrompt(prompt);
-  if (!normalized)
-    return hasImages ? "Work with attached image" : "Current task";
-  if (normalized.length <= MAX_TITLE_CHARS) return normalized;
-  return `${normalized.slice(0, MAX_TITLE_CHARS - 1).trimEnd()}…`;
+  if (!prompt) return hasImages ? "Work with attached image" : "Current task";
+  if (prompt.length <= MAX_TITLE_CHARS) return prompt;
+  return `${prompt.slice(0, MAX_TITLE_CHARS - 1).trimEnd()}…`;
 }
 
 function promptForSummary(prompts: readonly string[]): string {
@@ -173,12 +122,9 @@ function getSummaryModel(ctx: ExtensionContext) {
 
 async function summarizePrompt(
   ctx: ExtensionContext,
-  prompt: string,
   contextPrompts: readonly string[],
   signal: AbortSignal,
 ): Promise<string | undefined> {
-  if (normalizePrompt(prompt).length <= SUMMARY_THRESHOLD) return undefined;
-
   const model = getSummaryModel(ctx);
   if (!model) return undefined;
   const submittedPrompt = promptForSummary(contextPrompts);
@@ -211,13 +157,7 @@ async function summarizePrompt(
       sessionId: uuidv7(),
     },
   );
-  logSummaryUsage(response.usage);
-
-  if (
-    signal.aborted ||
-    response.stopReason === "error" ||
-    response.stopReason === "aborted"
-  ) {
+  if (response.stopReason === "error" || response.stopReason === "aborted") {
     return undefined;
   }
 
@@ -229,88 +169,45 @@ async function summarizePrompt(
 }
 
 export default function taskTitleExtension(pi: ExtensionAPI): void {
-  let generation = 0;
-  let active = false;
-  let pendingController: AbortController | undefined;
+  // The in-flight summary request; a result is used only if it is still the pending one.
+  let pending: AbortController | undefined;
 
   const cancelPending = (): void => {
-    pendingController?.abort();
-    pendingController = undefined;
+    pending?.abort();
+    pending = undefined;
   };
 
   pi.on("session_start", () => {
-    generation++;
-    active = false;
     cancelPending();
     publishTitle(pi, undefined);
   });
 
   pi.on("before_agent_start", (event, ctx) => {
-    if (event.messageType !== "user") return;
-
     // This is a TUI affordance. Avoid making an extra request in print/JSON/RPC modes.
-    if (ctx.mode !== "tui") return;
-
-    generation++;
-    const requestGeneration = generation;
-    active = true;
+    if (event.messageType !== "user" || ctx.mode !== "tui") return;
     cancelPending();
 
     // Publish an immediate local title so the agent never waits for the helper call.
-    const normalizedPrompt = normalizePrompt(event.prompt);
-    const fallback = fallbackTitle(
-      normalizedPrompt,
-      Boolean(event.images?.length),
-    );
-    publishTitle(pi, fallback);
+    const prompt = normalizePrompt(event.prompt);
+    publishTitle(pi, fallbackTitle(prompt, Boolean(event.images?.length)));
 
     // Short prompts are already suitable titles and do not need a model call.
-    if (normalizedPrompt.length <= SUMMARY_THRESHOLD) return;
+    if (prompt.length <= SUMMARY_THRESHOLD) return;
 
-    const contextPrompts = recentUserPrompts(ctx, normalizedPrompt);
     const controller = new AbortController();
-    pendingController = controller;
-    const timeout = setTimeout(() => controller.abort(), SUMMARY_TIMEOUT_MS);
-
-    void summarizePrompt(
-      ctx,
-      normalizedPrompt,
-      contextPrompts,
-      controller.signal,
-    )
+    pending = controller;
+    void summarizePrompt(ctx, recentUserPrompts(ctx, prompt), controller.signal)
+      .catch(() => undefined)
       .then((title) => {
-        if (
-          !active ||
-          requestGeneration !== generation ||
-          pendingController !== controller
-        )
-          return;
-        publishTitle(pi, title ?? fallback, title ? { transition: true } : {});
-      })
-      .catch(() => {
-        if (
-          !active ||
-          requestGeneration !== generation ||
-          pendingController !== controller
-        )
-          return;
-        // The local title is intentionally silent fallback behavior.
-        publishTitle(pi, fallback);
-      })
-      .finally(() => {
-        clearTimeout(timeout);
-        if (pendingController === controller) pendingController = undefined;
+        if (pending !== controller) return;
+        pending = undefined;
+        if (title) publishTitle(pi, title, true);
       });
   });
 
-  pi.on("agent_settled", () => {
-    active = false;
-    cancelPending();
-  });
+  pi.on("agent_settled", cancelPending);
 
   pi.on("session_shutdown", () => {
-    generation++;
-    active = false;
     cancelPending();
     publishTitle(pi, undefined);
   });

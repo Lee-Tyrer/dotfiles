@@ -18,8 +18,8 @@ secrets/
 **/.pi/agent/auth.json
 **/.pi/agent/models-store.json
 **/.pi/agent/sessions/
+**/.pi/agent/snapshots/
 **/.pi/agent/trust.json
-**/.pi/agent/question-summary-usage.json
 **/.pi/agent/bin/
 **/.pi/agent/npm/node_modules/
 /pi/.pi/generated/

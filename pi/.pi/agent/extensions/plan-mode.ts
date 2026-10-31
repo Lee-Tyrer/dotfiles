@@ -40,36 +40,29 @@ function isPlanModeContext(message: AgentMessage): boolean {
 // commands that are clearly observational. sd is intentionally excluded because
 // it edits files in place.
 const READ_ONLY_COMMANDS = [
-  /^\s*(?:cat|head|tail|less|more|ls|pwd|grep|rg|fd|file|stat|du|df|tree|which|whereis|type|env|printenv|uname|whoami|id|date|wc|sort|uniq|diff|eza|bat)(?:\s|$)/i,
+  /^\s*(?:cat|head|tail|less|more|ls|pwd|grep|rg|fd|find|file|stat|du|df|tree|which|whereis|type|env|printenv|uname|whoami|id|date|wc|sort|uniq|diff|eza|bat)(?:\s|$)/i,
   /^\s*git\s+(?:-C\s+\S+\s+)?(?:status|log|diff|show|rev-parse|ls-files)(?:\s|$)/i,
   /^\s*git\s+(?:-C\s+\S+\s+)?branch(?:\s+(?:-a|--all|-r|--remotes|-v|--verbose|-l|--list))?\s*$/i,
   /^\s*git\s+(?:-C\s+\S+\s+)?remote\s+(?:-v|--verbose|show|get-url)(?:\s|$)/i,
   /^\s*git\s+(?:-C\s+\S+\s+)?tag(?:\s+(?:-l|--list))?\s*$/i,
   /^\s*git\s+(?:-C\s+\S+\s+)?config\s+--get(?:-all)?(?:\s|$)/i,
-  /^\s*npm\s+(?:list|ls|view|info|search|outdated|audit)(?:\s|$)/i,
+  /^\s*npm\s+(?:list|ls|view|info|search|outdated|audit(?!\s+fix))(?:\s|$)/i,
   /^\s*yarn\s+(?:list|info|why|audit)(?:\s|$)/i,
   /^\s*node\s+--version\s*$/i,
   /^\s*python(?:3)?\s+--version\s*$/i,
 ];
 
+// Pipes and command lists are allowed when every command in them is read-only.
+// Redirects (other than discarding stderr), command substitution, background
+// jobs, and multi-line scripts are rejected rather than parsed.
 function isReadOnlyBashCommand(command: string): boolean {
-  const trimmed = command.trim();
-  if (!trimmed) return false;
-
-  // Do not try to parse shell syntax here. Reject chaining, redirects,
-  // command substitution, and multi-line scripts instead.
-  if (/\r|\n|&&|\|\||[;&|<>`]|\$\s*\(/.test(trimmed)) return false;
-  if (/^\s*find\b.*\s-(?:exec|execdir|delete|ok|okdir)\b/i.test(trimmed))
-    return false;
-  if (
-    /^\s*(?:npm|yarn|node|python|python3)\b.*(?:--eval|-e\b|install|uninstall|update|upgrade|publish|add|remove|exec)\b/i.test(
-      trimmed,
-    )
-  ) {
-    return false;
-  }
-
-  return READ_ONLY_COMMANDS.some((pattern) => pattern.test(trimmed));
+  const stripped = command.replace(/\s2>(?:\/dev\/null|&1)/g, "");
+  if (/\r|\n|[<>`]|\$\s*\(|(?:^|[^&])&(?!&)/.test(stripped)) return false;
+  return stripped.split(/&&|\|\||[|;]/).every((segment) =>
+    segment.trim() !== "" &&
+    !/^\s*find\b.*\s-(?:exec|execdir|delete|ok|okdir|fprint0?|fprintf|fls)\b/i.test(segment) &&
+    READ_ONLY_COMMANDS.some((pattern) => pattern.test(segment)),
+  );
 }
 
 interface PlanModeState {
@@ -119,10 +112,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
   }
 
   function setPlanMode(enabled: boolean): void {
-    // Update the state before rebuilding tools so every synchronous hook sees
-    // the same mode as the statusline and the persisted state.
     planModeEnabled = enabled;
-    pi.events.emit("plan-mode:changed", { enabled });
     if (enabled) {
       if (toolsBeforePlanMode === undefined) {
         toolsBeforePlanMode = pi.getActiveTools();

@@ -1,4 +1,4 @@
--- Side-by-side review of Pi prompt snapshots, built on diffview.nvim.
+-- Side-by-side review of uncommitted changes, built on diffview.nvim.
 -- Opened by ~/.pi/agent/extensions/diff.ts; comments are written to $PI_DIFF_COMMENTS on exit.
 local M = {}
 
@@ -9,16 +9,13 @@ local group = api.nvim_create_augroup("pi_diff", { clear = true })
 local state = {
   ranges = {}, -- ordered ranges from the payload
   by_id = {},
-  since = {},
   current = nil,
   comments = {},
   comments_path = nil,
-  root = nil,
 }
 
 local HELP = {
-  { "p", "pick prompt / session / branch" },
-  { "P", "pick range: since prompt N" },
+  { "p", "pick uncommitted / branch" },
   { "c", "comment on line (visual: on selection, on a comment: edit)" },
   { "dc", "delete comment on line" },
   { "C", "list all comments" },
@@ -74,9 +71,7 @@ local function decorate()
   local range = state.current
   if not v or not range or not v.cur_layout then return end
   local layout = v.cur_layout
-  local labels = range.kind == "branch"
-    and { a = "merge base", b = "working tree" }
-    or { a = "before", b = "after" }
+  local labels = range.id == "branch" and { a = "merge base", b = "working tree" } or { a = "before", b = "after" }
   for key, label in pairs(labels) do
     local win = layout[key]
     if win and win.id and api.nvim_win_is_valid(win.id) then
@@ -205,14 +200,8 @@ local function open_range(range, after)
   if view() then vim.cmd("DiffviewClose") end
   state.switching = false
   state.current = range
-  if range.kind == "snapshot" then
-    vim.env.GIT_DIR = range.gitDir
-    vim.env.GIT_WORK_TREE = state.root
-  else
-    vim.env.GIT_DIR = nil
-    vim.env.GIT_WORK_TREE = nil
-  end
-  vim.cmd("DiffviewOpen " .. range.from .. (range.to and (".." .. range.to) or ""))
+  -- diffview lists untracked files only for the plain working-tree view, so use it for uncommitted changes.
+  vim.cmd(range.id == "branch" and ("DiffviewOpen " .. range.from) or "DiffviewOpen")
   if after then
     -- File listing is async; wait for the view before acting on it.
     local tries = 0
@@ -252,31 +241,20 @@ local function jump_to(comment)
   end
 end
 
-local function pick(items, prompt)
-  vim.ui.select(items, {
-    prompt = prompt,
-    format_item = function(range)
-      local marker = state.current and state.current.id == range.id and "● " or "  "
-      local s = stats(range)
-      return marker .. range.label .. (s ~= "" and ("   " .. s) or "")
-    end,
-  }, function(range) if range then open_range(range) end end)
-end
-
 local function pick_range()
   local items = {}
   for index = #state.ranges, 1, -1 do items[#items + 1] = state.ranges[index] end
   if state.branch_error then
     notify("Branch diff unavailable: " .. state.branch_error, vim.log.levels.WARN)
   end
-  pick(items, "Review")
-end
-
-local function pick_since()
-  if #state.since == 0 then return notify("Need at least two prompts for a range.") end
-  local items = {}
-  for index = #state.since, 1, -1 do items[#items + 1] = state.since[index] end
-  pick(items, "Review since prompt")
+  vim.ui.select(items, {
+    prompt = "Review",
+    format_item = function(range)
+      local marker = state.current and state.current.id == range.id and "● " or "  "
+      local s = stats(range)
+      return marker .. range.label .. (s ~= "" and ("   " .. s) or "")
+    end,
+  }, function(range) if range then open_range(range) end end)
 end
 
 local function list_comments()
@@ -320,7 +298,6 @@ local function map_buffer(bufnr, diff_buffer)
     vim.keymap.set(mode, lhs, rhs, { buffer = bufnr, silent = true, nowait = true, desc = "Pi diff: " .. desc })
   end
   map("n", "p", pick_range, "pick review")
-  map("n", "P", pick_since, "pick range")
   map("n", "C", list_comments, "list comments")
   map("n", "?", show_help, "help")
   map("n", "q", finish, "finish review")
@@ -345,12 +322,9 @@ end
 function M.open(payload_path)
   local payload = vim.json.decode(table.concat(vim.fn.readfile(payload_path, "b"), "\n"))
   state.ranges = payload.ranges or {}
-  state.since = payload.sinceRanges or {}
   state.branch_error = payload.branchError
   state.comments_path = vim.env.PI_DIFF_COMMENTS
-  state.root = vim.fn.getcwd()
   for _, range in ipairs(state.ranges) do state.by_id[range.id] = range end
-  for _, range in ipairs(state.since) do state.by_id[range.id] = range end
 
   -- This Neovim is a throwaway review instance; don't overwrite the project's saved session.
   pcall(function() require("persistence").stop() end)

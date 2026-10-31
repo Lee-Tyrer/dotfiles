@@ -34,6 +34,8 @@ const MENU: Array<{ key: string; action: Action; label: string; description: str
 	{ key: "r", action: "remove", label: "Remove worktree", description: "Choose a workspace to remove" },
 ];
 
+const LIST_HELP = "j/k or ↑/↓ navigate · g/G first/last · / search · enter select · esc back";
+
 function branchName(worktree: Worktree): string {
 	return worktree.branch?.replace(/^refs\/heads\//, "") ?? (worktree.detached ? `(detached ${worktree.head?.slice(0, 8) ?? ""})` : "(unknown)");
 }
@@ -72,7 +74,7 @@ async function getWorktrees(pi: ExtensionAPI, cwd: string): Promise<Worktree[]> 
 }
 
 function menuLines(theme: ExtensionCommandContext["ui"]["theme"]): string[] {
-	const lines = [
+	return [
 		theme.fg("accent", theme.bold("Worktrees")),
 		"",
 		...MENU.map((item) =>
@@ -81,28 +83,24 @@ function menuLines(theme: ExtensionCommandContext["ui"]["theme"]): string[] {
 		"",
 		theme.fg("dim", "Press a key to choose · esc close"),
 	];
-	return lines;
 }
 
 async function chooseAction(ctx: ExtensionCommandContext): Promise<Action | null> {
 	return ctx.ui.custom<Action | null>((tui, theme, _keybindings, done) => {
-		const component = {
-			render(width: number) {
-				const container = new Container();
-				container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
-				container.addChild(new Text(menuLines(theme).join("\n"), 1, 0));
-				container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
-				return container.render(width);
-			},
+		const container = new Container();
+		container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+		container.addChild(new Text(menuLines(theme).join("\n"), 1, 0));
+		container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+		return {
+			render: (width: number) => container.render(width),
+			invalidate: () => container.invalidate(),
 			handleInput(data: string) {
 				if (matchesKey(data, Key.escape)) return done(null);
 				const match = MENU.find((item) => data.toLowerCase() === item.key);
 				if (match) done(match.action);
 				tui.requestRender();
 			},
-			invalidate() {},
 		};
-		return component;
 	});
 }
 
@@ -144,7 +142,7 @@ async function chooseWorktree(
 		container.addChild(list);
 		let searching = false;
 		let filter = "";
-		const help = new Text(theme.fg("dim", "j/k or ↑/↓ navigate · g/G first/last · / search · enter select · esc back"), 1, 0);
+		const help = new Text(theme.fg("dim", LIST_HELP), 1, 0);
 		container.addChild(help);
 		container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
 		const updateFilter = () => {
@@ -160,7 +158,7 @@ async function chooseWorktree(
 						searching = false;
 						filter = "";
 						list.setFilter("");
-						help.setText(theme.fg("dim", "j/k or ↑/↓ navigate · g/G first/last · / search · enter select · esc back"));
+						help.setText(theme.fg("dim", LIST_HELP));
 					} else if (matchesKey(data, Key.backspace)) {
 						filter = filter.slice(0, -1);
 						updateFilter();
@@ -206,32 +204,7 @@ function spawnDetached(command: string, args: string[], cwd: string): Promise<vo
 	});
 }
 
-async function openWorktree(_pi: ExtensionAPI, ctx: ExtensionCommandContext, worktree: Worktree): Promise<void> {
-	const terminal = (process.env.TERM_PROGRAM ?? "").toLowerCase();
-	if (terminal.includes("alacritty") || process.env.ALACRITTY_WINDOW_ID) {
-		await spawnDetached("alacritty", ["--working-directory", worktree.path, "-e", "nvim", ...NVIM_ARGS], worktree.path);
-		ctx.ui.notify(`Opened ${branchName(worktree)} in a new Alacritty + Neovim instance`, "info");
-		return;
-	}
-
-	if (terminal.includes("wezterm")) {
-		await spawnDetached("wezterm", ["start", "--cwd", worktree.path, "--", "nvim", ...NVIM_ARGS], worktree.path);
-		ctx.ui.notify(`Opened ${branchName(worktree)} in a new Neovim window`, "info");
-		return;
-	}
-	if (terminal.includes("kitty")) {
-		await spawnDetached("kitty", ["--directory", worktree.path, "nvim", ...NVIM_ARGS], worktree.path);
-		ctx.ui.notify(`Opened ${branchName(worktree)} in a new Neovim window`, "info");
-		return;
-	}
-	if (terminal.includes("ghostty")) {
-		await spawnDetached("ghostty", [`--working-directory=${worktree.path}`, "-e", "nvim", ...NVIM_ARGS], worktree.path);
-		ctx.ui.notify(`Opened ${branchName(worktree)} in a new Neovim window`, "info");
-		return;
-	}
-
-	// Pi launched by Sidekick may not inherit Alacritty's identifying variables,
-	// so use the configured local default before giving up.
+async function openWorktree(ctx: ExtensionCommandContext, worktree: Worktree): Promise<void> {
 	await spawnDetached("alacritty", ["--working-directory", worktree.path, "-e", "nvim", ...NVIM_ARGS], worktree.path);
 	ctx.ui.notify(`Opened ${branchName(worktree)} in a new Alacritty + Neovim instance`, "info");
 }
@@ -308,7 +281,7 @@ export default function worktreesExtension(pi: ExtensionAPI): void {
 						worktrees.filter((item) => !item.bare),
 						{ detailed: action === "list" },
 					);
-					if (selected) await openWorktree(pi, ctx, selected);
+					if (selected) await openWorktree(ctx, selected);
 				}
 			} catch (error) {
 				ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");

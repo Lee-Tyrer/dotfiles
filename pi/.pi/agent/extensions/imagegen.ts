@@ -79,7 +79,7 @@ function resolveWorkspacePath(cwd: string, path: string): string {
 	const workspace = resolve(cwd);
 	const resolved = resolve(workspace, path);
 	const outside = relative(workspace, resolved);
-	if (outside === ".." || outside.startsWith(`..${"/"}`) || isAbsolute(outside)) {
+	if (outside === ".." || outside.startsWith("../") || isAbsolute(outside)) {
 		throw new Error(`Path must be inside the workspace: ${path}`);
 	}
 	return resolved;
@@ -106,36 +106,25 @@ function decodeAccountId(accessToken: string): string {
 	}
 }
 
-async function getCodexAuth(ctx: ExtensionContext): Promise<{ token: string; accountId: string; baseUrl: string; headers: Headers }> {
+async function getCodexAuth(ctx: ExtensionContext): Promise<{ baseUrl: string; headers: Headers }> {
 	const resolved = (await ctx.modelRegistry.getProviderAuth(CODEX_PROVIDER)) as CodexAuthResult | undefined;
 	const token = resolved?.auth.apiKey;
 	if (!token) {
 		throw new Error("ChatGPT/Codex login is required for image generation. Run /login and choose OpenAI (ChatGPT Plus/Pro). No OPENAI_API_KEY is used by this tool.");
 	}
 
-	const accountId = decodeAccountId(token);
-	const provider = ctx.modelRegistry.getProvider(CODEX_PROVIDER);
-	const baseUrl = (provider?.baseUrl?.trim() || DEFAULT_CODEX_BASE_URL).replace(/\/+$/, "");
+	const baseUrl = (ctx.modelRegistry.getProvider(CODEX_PROVIDER)?.baseUrl ?? DEFAULT_CODEX_BASE_URL).replace(/\/+$/, "");
 	const headers = new Headers();
 	for (const [key, value] of Object.entries(resolved?.auth.headers ?? {})) {
 		if (value !== null && value !== undefined) headers.set(key, value);
 	}
 	headers.set("Authorization", `Bearer ${token}`);
-	headers.set("chatgpt-account-id", accountId);
+	headers.set("chatgpt-account-id", decodeAccountId(token));
 	headers.set("originator", "pi");
 	headers.set("User-Agent", "pi");
 	headers.set("Content-Type", "application/json");
 	headers.set("Accept", "application/json");
-	return { token, accountId, baseUrl, headers };
-}
-
-function resolveCodexImageBaseUrl(baseUrl: string): string {
-	// Pi's openai-codex provider stores the shared `/backend-api` base URL, while
-	// Codex image and Responses routes live below `/backend-api/codex`.
-	const normalized = baseUrl.trim().replace(/\/+$/, "");
-	if (normalized.endsWith("/codex/responses")) return normalized.slice(0, -"/responses".length);
-	if (normalized.endsWith("/codex")) return normalized;
-	return `${normalized}/codex`;
+	return { baseUrl, headers };
 }
 
 function isTransientStatus(status: number): boolean {
@@ -242,11 +231,10 @@ async function requestImages(
 	if ((params.count ?? 1) > 1) body.n = params.count;
 	if (operation === "edit") body.images = await loadReferenceImages(cwd, params.imagePaths ?? []);
 
-	if (toolCallId) {
-		auth.headers.set("x-codex-image-turn-id", toolCallId);
-	}
+	auth.headers.set("x-codex-image-turn-id", toolCallId);
 
-	const endpoint = `${resolveCodexImageBaseUrl(auth.baseUrl)}/images/${operation === "generate" ? "generations" : "edits"}`;
+	// Pi stores the shared `/backend-api` base URL; Codex image routes live below `/codex`.
+	const endpoint = `${auth.baseUrl}/codex/images/${operation === "generate" ? "generations" : "edits"}`;
 	for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
 		const response = await fetch(endpoint, {
 			method: "POST",
@@ -310,11 +298,6 @@ export default function (pi: ExtensionAPI) {
 		async execute(toolCallId, params, signal, _onUpdate, ctx) {
 			try {
 				const images = await requestImages(params, ctx.cwd, ctx, toolCallId, signal);
-				const content = images.map((data) => ({
-					type: "image" as const,
-					data,
-					mimeType: "image/png",
-				}));
 				const savedPaths: string[] = [];
 				if (params.outputPath) {
 					const outputPath = resolveWorkspacePath(ctx.cwd, params.outputPath);
@@ -325,13 +308,16 @@ export default function (pi: ExtensionAPI) {
 						savedPaths.push(path);
 					}
 				}
-				content.unshift({
-					type: "text",
-					text: savedPaths.length
-						? `Generated with ChatGPT/Codex subscription and saved:\n${savedPaths.join("\n")}`
-						: `Generated ${images.length} image(s) with ChatGPT/Codex subscription.`,
-				});
-				return { content, details: { savedPaths, provider: CODEX_PROVIDER } };
+				const summary = savedPaths.length
+					? `Generated with ChatGPT/Codex subscription and saved:\n${savedPaths.join("\n")}`
+					: `Generated ${images.length} image(s) with ChatGPT/Codex subscription.`;
+				return {
+					content: [
+						{ type: "text" as const, text: summary },
+						...images.map((data) => ({ type: "image" as const, data, mimeType: "image/png" })),
+					],
+					details: { savedPaths, provider: CODEX_PROVIDER },
+				};
 			} catch (error) {
 				return {
 					content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
