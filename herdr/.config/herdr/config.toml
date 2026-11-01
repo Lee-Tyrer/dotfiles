@@ -24,8 +24,9 @@ height = "90%"
 [[keys.command]]
 key = "prefix+alt+d"
 type = "popup"
-command = "nvim -c DiffviewOpen"
-description = "diff working tree (diffview)"
+# Same review as Pi's /diff; on q, comments are sent to the agent in the focused pane.
+command = '''nvim -n -i NONE -c "lua require('pi_diff').popup()"'''
+description = "review diff, send comments to agent"
 width = "95%"
 height = "95%"
 

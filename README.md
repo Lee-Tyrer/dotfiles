@@ -7,7 +7,7 @@ Personal configuration managed with [GNU Stow](https://www.gnu.org/software/stow
 - `bash` - Bash prompt, completion, history, bashline and fzf integration
 - `alacritty` — terminal configuration
 - `git` — Git configuration
-- `herdr` — Herdr keybindings, theme, and inspection popups (`prefix+alt+g` LazyGit, `prefix+alt+d` diff, `prefix+alt+f` find file, `prefix+alt+s` search text)
+- `herdr` — Herdr keybindings, theme, and inspection popups (`prefix+alt+g` LazyGit, `prefix+alt+d` diff review with comments sent to the focused agent, `prefix+alt+f` find file, `prefix+alt+s` search text)
 - `lazygit` — Lazygit configuration
 - `nvim` — Neovim/LazyVim configuration
 - `pi` — Pi coding-agent settings, keybindings, skills, and extensions

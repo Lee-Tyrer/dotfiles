@@ -1,5 +1,6 @@
 -- Side-by-side review of uncommitted changes, built on diffview.nvim.
 -- Opened by ~/.pi/agent/extensions/diff.ts; comments are written to $PI_DIFF_COMMENTS on exit.
+-- M.popup() is the Herdr popup entry: comments are sent to the agent in $HERDR_ACTIVE_PANE_ID.
 local M = {}
 
 local api = vim.api
@@ -12,6 +13,7 @@ local state = {
   current = nil,
   comments = {},
   comments_path = nil,
+  agent_pane = nil, -- popup mode: Herdr pane that receives the comments
 }
 
 local HELP = {
@@ -286,8 +288,35 @@ local function show_help()
   end
 end
 
+-- Mirrors formatComments in diff.ts.
+local function format_comments()
+  local sections = {}
+  for _, c in ipairs(state.comments) do
+    local lines = c.endLine > c.startLine and (c.startLine .. "-" .. c.endLine) or tostring(c.startLine)
+    local range = state.by_id[c.range] and state.by_id[c.range].title or nil
+    local side = c.side == "before" and (" (original code" .. (range and (", before " .. range) or "") .. ")") or ""
+    local excerpt = c.excerpt and vim.trim(c.excerpt) ~= ""
+      and ("\n```" .. (c.filetype or "") .. "\n" .. c.excerpt:gsub("%s+$", "") .. "\n```") or ""
+    sections[#sections + 1] = c.path .. ":" .. lines .. side .. excerpt .. "\n" .. vim.trim(c.text)
+  end
+  return "Please review and address these comments:\n\n" .. table.concat(sections, "\n\n")
+end
+
+-- Popup mode: deliver comments to the agent pane. On failure stay open so comments are not lost.
+local function send_to_agent()
+  if #state.comments == 0 then return true end
+  local result = vim.system({ "herdr", "agent", "prompt", state.agent_pane, format_comments() }, { text = true }):wait()
+  if result.code ~= 0 then
+    notify("Could not send comments to the agent: " .. vim.trim(result.stderr ~= "" and result.stderr or result.stdout)
+      .. "\nFix and press q again, or :qa! to discard.", vim.log.levels.ERROR)
+    return false
+  end
+  return true
+end
+
 local function finish()
   save()
+  if state.agent_pane and not send_to_agent() then return end
   vim.cmd("confirm qa")
 end
 
@@ -319,8 +348,7 @@ local function on_diff_buf()
   render(bufnr)
 end
 
-function M.open(payload_path)
-  local payload = vim.json.decode(table.concat(vim.fn.readfile(payload_path, "b"), "\n"))
+local function start(payload)
   state.ranges = payload.ranges or {}
   state.branch_error = payload.branchError
   state.comments_path = vim.env.PI_DIFF_COMMENTS
@@ -357,6 +385,58 @@ function M.open(payload_path)
 
   local initial = state.by_id[payload.initial] or state.ranges[#state.ranges]
   if initial then open_range(initial) end
+end
+
+function M.open(payload_path)
+  start(vim.json.decode(table.concat(vim.fn.readfile(payload_path, "b"), "\n")))
+end
+
+-- Range discovery mirrors diff.ts: uncommitted changes, plus the branch against its merge base.
+local function git(root, args)
+  local result = vim.system(vim.list_extend({ "git", "-C", root }, args), { text = true }):wait()
+  return result.code == 0 and vim.trim(result.stdout) or nil
+end
+
+local function shortstat(root, from)
+  local out = git(root, { "diff", "--shortstat", from }) or ""
+  local function number(pattern) return tonumber(out:match(pattern)) or 0 end
+  return number("(%d+) files? changed"), number("(%d+) insertions?"), number("(%d+) deletions?")
+end
+
+local function range(root, id, from, label, title)
+  local files, insertions, deletions = shortstat(root, from)
+  return { id = id, from = from, label = label, title = title, files = files, insertions = insertions, deletions = deletions }
+end
+
+local function branch_range(root)
+  local branch = git(root, { "symbolic-ref", "--quiet", "--short", "HEAD" }) or git(root, { "rev-parse", "--short", "HEAD" })
+  local default_ref = git(root, { "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD" })
+  local base
+  for _, ref in ipairs({ default_ref and default_ref:gsub("^refs/remotes/", "") or false, "origin/main", "origin/master", "main", "master" }) do
+    if ref and ref ~= branch and git(root, { "rev-parse", "--verify", "--quiet", ref .. "^{commit}" }) then
+      base = ref
+      break
+    end
+  end
+  if not base then return nil, "Could not determine the Git base." end
+  local merge_base = git(root, { "merge-base", "HEAD", base })
+  if not merge_base then return nil, "No merge base between HEAD and " .. base .. "." end
+  return range(root, "branch", merge_base, "Branch  " .. branch .. " vs " .. base, branch .. " vs " .. base .. " (working tree)")
+end
+
+function M.popup()
+  local root = git(vim.fn.getcwd(), { "rev-parse", "--show-toplevel" })
+  if not root then
+    vim.api.nvim_echo({ { "Pi diff: the focused pane is not in a Git repository. Press any key.", "ErrorMsg" } }, true, {})
+    vim.fn.getchar()
+    return vim.cmd("qa!")
+  end
+  vim.cmd.cd(root)
+  state.agent_pane = vim.env.HERDR_ACTIVE_PANE_ID
+  local ranges = { range(root, "head", "HEAD", "Uncommitted  working tree vs HEAD", "Uncommitted changes") }
+  local branch, branch_error = branch_range(root)
+  if branch then ranges[2] = branch end
+  start({ ranges = ranges, initial = "head", branchError = branch_error })
 end
 
 return M
