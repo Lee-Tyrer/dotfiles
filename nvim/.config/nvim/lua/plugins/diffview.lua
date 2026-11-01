@@ -1,4 +1,4 @@
--- Used by Pi's /diff review (lua/pi_diff.lua).
+-- Used by the Herdr diff review popup (lua/pi_diff.lua).
 return {
   {
     "sindrets/diffview.nvim",

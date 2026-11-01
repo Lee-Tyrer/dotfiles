@@ -16,7 +16,7 @@ previous_workspace = "ctrl+shift+tab"
 [[keys.command]]
 key = "prefix+alt+d"
 type = "popup"
-# Same review as Pi's /diff; on q, comments are sent to the agent in the focused pane.
+# Diff review (lua/pi_diff.lua); on q, comments are sent to the agent in the focused pane.
 command = '''nvim -n -i NONE -c "lua require('pi_diff').popup()"'''
 description = "review diff, send comments to agent"
 width = "95%"

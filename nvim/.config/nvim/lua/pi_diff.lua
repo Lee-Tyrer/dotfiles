@@ -1,6 +1,6 @@
 -- Side-by-side review of uncommitted changes, built on diffview.nvim.
--- Opened by ~/.pi/agent/extensions/diff.ts; comments are written to $PI_DIFF_COMMENTS on exit.
--- M.popup() is the Herdr popup entry: comments are sent to the agent in $HERDR_ACTIVE_PANE_ID.
+-- Opened by the Herdr prefix+alt+d popup; on finish, comments are sent to the agent in
+-- $HERDR_ACTIVE_PANE_ID, the pane that was focused when the popup opened.
 local M = {}
 
 local api = vim.api
@@ -8,12 +8,11 @@ local ns = api.nvim_create_namespace("pi_diff_comments")
 local group = api.nvim_create_augroup("pi_diff", { clear = true })
 
 local state = {
-  ranges = {}, -- ordered ranges from the payload
+  ranges = {}, -- uncommitted, then branch vs merge base when available
   by_id = {},
   current = nil,
   comments = {},
-  comments_path = nil,
-  agent_pane = nil, -- popup mode: Herdr pane that receives the comments
+  agent_pane = nil, -- Herdr pane that receives the comments
 }
 
 local HELP = {
@@ -36,18 +35,6 @@ local function view()
   return ok and lib.get_current_view() or nil
 end
 
-local function save()
-  if not state.comments_path then return end
-  local out = {}
-  for _, c in ipairs(state.comments) do
-    out[#out + 1] = {
-      path = c.path, side = c.side, startLine = c.startLine, endLine = c.endLine,
-      text = c.text, excerpt = c.excerpt, filetype = c.filetype,
-      range = state.by_id[c.range] and state.by_id[c.range].title or nil,
-    }
-  end
-  vim.fn.writefile({ vim.json.encode(out) }, state.comments_path)
-end
 
 -- Map a buffer to its side of the current diffview layout.
 local function side_of(bufnr)
@@ -171,7 +158,6 @@ local function add_comment(first, last)
     local c = state.comments[existing]
     return edit_comment(string.format("Edit comment · %s:%d", path, c.startLine), c.text, function(text)
       if text == "" then table.remove(state.comments, existing) else c.text = text end
-      save()
       render(bufnr)
     end)
   end
@@ -183,7 +169,6 @@ local function add_comment(first, last)
       excerpt = table.concat(api.nvim_buf_get_lines(bufnr, first - 1, math.min(last, first + 11), false), "\n"),
       filetype = vim.bo[bufnr].filetype ~= "" and vim.bo[bufnr].filetype or nil,
     }
-    save()
     render(bufnr)
   end)
 end
@@ -193,7 +178,6 @@ local function delete_comment()
   local found = comments_at(bufnr, api.nvim_win_get_cursor(0)[1])
   if #found == 0 then return notify("No comment on this line.") end
   for index = #found, 1, -1 do table.remove(state.comments, found[index]) end
-  save()
   render(bufnr)
 end
 
@@ -288,7 +272,7 @@ local function show_help()
   end
 end
 
--- Mirrors formatComments in diff.ts.
+-- One prompt with each comment's location, the code it refers to, and the note.
 local function format_comments()
   local sections = {}
   for _, c in ipairs(state.comments) do
@@ -302,9 +286,13 @@ local function format_comments()
   return "Please review and address these comments:\n\n" .. table.concat(sections, "\n\n")
 end
 
--- Popup mode: deliver comments to the agent pane. On failure stay open so comments are not lost.
+-- Deliver comments to the agent pane. On failure stay open so comments are not lost.
 local function send_to_agent()
   if #state.comments == 0 then return true end
+  if not state.agent_pane then
+    notify("No Herdr pane to send comments to; open the review with prefix+alt+d.\n:qa! discards them.", vim.log.levels.ERROR)
+    return false
+  end
   local result = vim.system({ "herdr", "agent", "prompt", state.agent_pane, format_comments() }, { text = true }):wait()
   if result.code ~= 0 then
     notify("Could not send comments to the agent: " .. vim.trim(result.stderr ~= "" and result.stderr or result.stdout)
@@ -315,8 +303,7 @@ local function send_to_agent()
 end
 
 local function finish()
-  save()
-  if state.agent_pane and not send_to_agent() then return end
+  if not send_to_agent() then return end
   vim.cmd("confirm qa")
 end
 
@@ -351,7 +338,6 @@ end
 local function start(payload)
   state.ranges = payload.ranges or {}
   state.branch_error = payload.branchError
-  state.comments_path = vim.env.PI_DIFF_COMMENTS
   for _, range in ipairs(state.ranges) do state.by_id[range.id] = range end
 
   -- This Neovim is a throwaway review instance; don't overwrite the project's saved session.
@@ -372,14 +358,18 @@ local function start(payload)
       end)
     end,
   })
-  api.nvim_create_autocmd("VimLeavePre", { group = group, once = true, callback = save })
   -- Closing diffview directly (e.g. :DiffviewClose) also ends the review.
   api.nvim_create_autocmd("User", {
     group = group,
     pattern = "DiffviewViewClosed",
     callback = function()
       if state.switching then return end
-      vim.schedule(function() if not view() and not state.switching then finish() end end)
+      vim.schedule(function()
+        if view() or state.switching then return end
+        -- finish() returns only when sending failed; reopen so the comments stay reachable.
+        finish()
+        open_range(state.current)
+      end)
     end,
   })
 
@@ -387,11 +377,6 @@ local function start(payload)
   if initial then open_range(initial) end
 end
 
-function M.open(payload_path)
-  start(vim.json.decode(table.concat(vim.fn.readfile(payload_path, "b"), "\n")))
-end
-
--- Range discovery mirrors diff.ts: uncommitted changes, plus the branch against its merge base.
 local function git(root, args)
   local result = vim.system(vim.list_extend({ "git", "-C", root }, args), { text = true }):wait()
   return result.code == 0 and vim.trim(result.stdout) or nil
