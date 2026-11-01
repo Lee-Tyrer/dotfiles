@@ -7,7 +7,7 @@ Personal configuration managed with [GNU Stow](https://www.gnu.org/software/stow
 - `bash` - Bash prompt, completion, history, bashline and fzf integration
 - `alacritty` — terminal configuration
 - `git` — Git configuration
-- `herdr` — Herdr keybindings and theme
+- `herdr` — Herdr keybindings, theme, and inspection popups (`prefix+alt+g` LazyGit, `prefix+alt+d` diff, `prefix+alt+f` find file, `prefix+alt+s` search text)
 - `lazygit` — Lazygit configuration
 - `nvim` — Neovim/LazyVim configuration
 - `pi` — Pi coding-agent settings, keybindings, skills, and extensions
@@ -23,7 +23,7 @@ cd "$HOME/dotfiles"
 ./setup.sh
 ```
 
-`setup.sh` installs Bash completion, Neovim, Alacritty, LazyGit, Herdr, fzf, the configured font, mise runtimes, uv, Pi and Codex, builds bashline, then stows the configs. Pinned prebuilt downloads are checksum-verified; Alacritty is built from its tagged source with a pinned Rust toolchain. It backs up a regular `~/.bashrc` and stops on other Stow conflicts instead of overwriting configs. Re-running it skips matching binary versions; building Alacritty on a fresh machine can take time. See [SETUP.md](SETUP.md) for manual commands and version details.
+`setup.sh` installs Bash completion, Neovim, Alacritty, LazyGit, Herdr, fzf, bat, delta, the configured font, mise runtimes, uv, Pi and Codex, builds bashline, then stows the configs. Pinned prebuilt downloads are checksum-verified; Alacritty is built from its tagged source with a pinned Rust toolchain. It backs up a regular `~/.bashrc` and stops on other Stow conflicts instead of overwriting configs. Re-running it skips matching binary versions; building Alacritty on a fresh machine can take time. See [SETUP.md](SETUP.md) for manual commands and version details.
 
 Use `stow -R -t "$HOME" <package>` to restow a package after changing its layout, and `stow -D -t "$HOME" <package>` to unlink it.
 

@@ -85,6 +85,23 @@ if ! installed herdr '0.9.3'; then
   install -m 755 "$tmp/herdr" "$HOME/.local/bin/herdr"
 fi
 
+# Used by the Herdr inspection popups and LazyGit's diff renderer.
+say 'Install bat 0.26.1 and delta 0.20.1'
+if ! installed bat '0.26.1'; then
+  fetch 'https://github.com/sharkdp/bat/releases/download/v0.26.1/bat-v0.26.1-x86_64-unknown-linux-musl.tar.gz' \
+    0dcd8ac79732c0d5b136f11f4ee00e581440e16a44eab5b3105b611bbf2cf191 "$tmp/bat.tar.gz"
+  mkdir -p "$tmp/bat"
+  tar -xzf "$tmp/bat.tar.gz" -C "$tmp/bat" --strip-components=1
+  install -m 755 "$tmp/bat/bat" "$HOME/.local/bin/bat"
+fi
+if ! installed delta '0.20.1'; then
+  fetch 'https://github.com/dandavison/delta/releases/download/0.20.1/delta-0.20.1-x86_64-unknown-linux-musl.tar.gz' \
+    69dcb4043f55c29118f408c6efd30115e0a4e0a6709253343b8c8fa814ab4a31 "$tmp/delta.tar.gz"
+  mkdir -p "$tmp/delta"
+  tar -xzf "$tmp/delta.tar.gz" -C "$tmp/delta" --strip-components=1
+  install -m 755 "$tmp/delta/delta" "$HOME/.local/bin/delta"
+fi
+
 say 'Install mise 2026.9.14 and uv 0.12.19'
 if ! installed mise '2026.9.14'; then
   fetch 'https://github.com/jdx/mise/releases/download/v2026.9.14/mise-v2026.9.14-linux-x64' \

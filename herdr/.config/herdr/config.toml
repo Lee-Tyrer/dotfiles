@@ -11,6 +11,40 @@ focus_pane_right = "prefix+ctrl+l"
 next_workspace = "ctrl+tab"
 previous_workspace = "ctrl+shift+tab"
 
+# Inspection popups. Each opens over the current pane in its working directory
+# and closes when the command exits.
+[[keys.command]]
+key = "prefix+alt+g"
+type = "popup"
+command = "lazygit"
+description = "lazygit"
+width = "90%"
+height = "90%"
+
+[[keys.command]]
+key = "prefix+alt+d"
+type = "popup"
+command = "nvim -c DiffviewOpen"
+description = "diff working tree (diffview)"
+width = "95%"
+height = "95%"
+
+[[keys.command]]
+key = "prefix+alt+f"
+type = "popup"
+command = '''fd --type f --hidden --exclude .git | fzf --preview "bat --color=always --style=numbers --theme=ansi {}" --bind "enter:become(nvim -R {})"'''
+description = "find file (opens read-only)"
+width = "90%"
+height = "90%"
+
+[[keys.command]]
+key = "prefix+alt+s"
+type = "popup"
+command = '''fzf --ansi --disabled --delimiter : --bind "change:reload:rg --hidden --glob '!.git' --line-number --color=always --smart-case -- {q} || true" --preview "bat --color=always --style=numbers --theme=ansi --highlight-line {2} {1}" --preview-window "+{2}/2" --bind "enter:become(nvim -R +{2} {1})"'''
+description = "search text (opens read-only)"
+width = "90%"
+height = "90%"
+
 [ui]
 status_indicators = "symbols"
 

@@ -49,3 +49,10 @@ gui:
   portraitMode: auto
   filterMode: substring
   statusPanelView: dashboard
+git:
+  # Press | to cycle renderers. The ansi theme follows the terminal palette.
+  diffRenderers:
+    - command: delta --dark --paging=never --line-numbers --syntax-theme=ansi
+      name: delta
+    - command: delta --dark --paging=never --side-by-side --line-numbers --syntax-theme=ansi
+      name: delta side-by-side
