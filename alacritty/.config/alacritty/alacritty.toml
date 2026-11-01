@@ -66,3 +66,14 @@ mods = "Control"
 key = "Return"
 mods = "Shift"
 chars = "\u001B\r"
+
+# Herdr next/previous workspace.
+[[keyboard.bindings]]
+key = "Tab"
+mods = "Control"
+chars = "\u001B[9;5u"
+
+[[keyboard.bindings]]
+key = "Tab"
+mods = "Control|Shift"
+chars = "\u001B[9;6u"
