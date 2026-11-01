@@ -87,6 +87,8 @@ async function readClaudeUsage(): Promise<UsageRow[]> {
 		headers: {
 			Authorization: `Bearer ${token}`,
 			"anthropic-beta": "oauth-2025-04-20",
+			// Without a Claude Code user agent the endpoint answers 429.
+			"User-Agent": "claude-code/2.1.314",
 			Accept: "application/json",
 		},
 		signal: AbortSignal.timeout(12_000),
