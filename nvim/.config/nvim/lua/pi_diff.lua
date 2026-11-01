@@ -316,7 +316,6 @@ local function map_buffer(bufnr, diff_buffer)
   map("n", "p", pick_range, "pick review")
   map("n", "C", list_comments, "list comments")
   map("n", "?", show_help, "help")
-  map("n", "q", finish, "finish review")
   if diff_buffer then
     map("n", "c", function() local l = api.nvim_win_get_cursor(0)[1]; add_comment(l, l) end, "comment")
     map("x", "c", function()
@@ -342,6 +341,9 @@ local function start(payload)
 
   -- This Neovim is a throwaway review instance; don't overwrite the project's saved session.
   pcall(function() require("persistence").stop() end)
+  -- Global so q also works from diffview's placeholder windows, e.g. when there are no changes.
+  -- Buffer-local q in the comment editor and help window still takes precedence.
+  vim.keymap.set("n", "q", finish, { silent = true, nowait = true, desc = "Pi diff: finish review" })
 
   api.nvim_create_autocmd("User", { group = group, pattern = { "DiffviewDiffBufWinEnter", "DiffviewDiffBufRead" }, callback = on_diff_buf })
   api.nvim_create_autocmd("User", {
