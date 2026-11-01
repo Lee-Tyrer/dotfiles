@@ -1,10 +1,11 @@
 /**
  * Registers imagegen for ChatGPT/Codex-backed raster image generation and editing.
  */
-import { dirname, extname, isAbsolute, relative, resolve } from "node:path";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { resizeImage, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getCapabilities, hyperlink, Text } from "@earendil-works/pi-tui";
 import { Type, type Static } from "typebox";
 
@@ -13,6 +14,10 @@ const DEFAULT_MODEL = "gpt-image-2";
 const DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api";
 const MAX_REFERENCE_BYTES = 50 * 1024 * 1024;
 const MAX_ATTEMPTS = 3;
+// The model gets a downscaled preview; the full-resolution PNG stays on disk.
+const PREVIEW_MAX_DIMENSION = 1024;
+// Above this, resizeImage switches to JPEG and lowers quality until the preview fits.
+const PREVIEW_MAX_BYTES = 512 * 1024;
 
 // The Codex backend ignores the `size` field and picks dimensions from the prompt, so each size
 // is sent as an aspect hint. Output is close to, not exactly, the named dimensions.
@@ -298,23 +303,32 @@ export default function (pi: ExtensionAPI) {
 		async execute(toolCallId, params, signal, _onUpdate, ctx) {
 			try {
 				const images = await requestImages(params, ctx.cwd, ctx, toolCallId, signal);
+				// Preview-only results go to a temp directory so the full image can still be read or edited later.
+				const outputPath = params.outputPath
+					? resolveWorkspacePath(ctx.cwd, params.outputPath)
+					: join(await mkdtemp(join(tmpdir(), "pi-imagegen-")), "image.png");
 				const savedPaths: string[] = [];
-				if (params.outputPath) {
-					const outputPath = resolveWorkspacePath(ctx.cwd, params.outputPath);
-					for (const [index, image] of images.entries()) {
-						const path = outputPathFor(outputPath, index);
-						await mkdir(dirname(path), { recursive: true });
-						await writeFile(path, Buffer.from(image, "base64"), { flag: "wx" });
-						savedPaths.push(path);
-					}
+				const previews = [];
+				for (const [index, image] of images.entries()) {
+					const path = outputPathFor(outputPath, index);
+					const bytes = Buffer.from(image, "base64");
+					await mkdir(dirname(path), { recursive: true });
+					await writeFile(path, bytes, { flag: "wx" });
+					savedPaths.push(path);
+					const preview = await resizeImage(bytes, "image/png", {
+						maxWidth: PREVIEW_MAX_DIMENSION,
+						maxHeight: PREVIEW_MAX_DIMENSION,
+						maxBytes: PREVIEW_MAX_BYTES,
+					});
+					previews.push(preview ? { data: preview.data, mimeType: preview.mimeType } : { data: image, mimeType: "image/png" });
 				}
-				const summary = savedPaths.length
+				const summary = params.outputPath
 					? `Generated with ChatGPT/Codex subscription and saved:\n${savedPaths.join("\n")}`
-					: `Generated ${images.length} image(s) with ChatGPT/Codex subscription.`;
+					: `Generated ${images.length} preview image(s) with ChatGPT/Codex subscription. Temporary full-resolution copies:\n${savedPaths.join("\n")}`;
 				return {
 					content: [
-						{ type: "text" as const, text: summary },
-						...images.map((data) => ({ type: "image" as const, data, mimeType: "image/png" })),
+						{ type: "text" as const, text: `${summary}\nShown below as downscaled previews; read a saved path for full resolution.` },
+						...previews.map((preview) => ({ type: "image" as const, ...preview })),
 					],
 					details: { savedPaths, provider: CODEX_PROVIDER },
 				};

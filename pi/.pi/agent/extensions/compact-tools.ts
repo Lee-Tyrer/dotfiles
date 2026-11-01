@@ -219,21 +219,38 @@ function messageText(message: ToolResultMessage): string {
     .join("\n");
 }
 
-function bashCommands(messages: AgentMessage[]): Map<string, string> {
-  const commands = new Map<string, string>();
+function toolCallArguments(messages: AgentMessage[]): Map<string, Record<string, unknown>> {
+  const calls = new Map<string, Record<string, unknown>>();
   for (const message of messages) {
     if (message.role !== "assistant") continue;
     for (const part of message.content) {
-      if (part.type === "toolCall" && part.name === "bash" && typeof part.arguments.command === "string") {
-        commands.set(part.id, part.arguments.command);
-      }
+      if (part.type === "toolCall") calls.set(part.id, part.arguments);
     }
   }
-  return commands;
+  return calls;
+}
+
+// Every image is re-sent with each request, so once the model has looked at one, keep only its path.
+function omitImages(message: ToolResultMessage, args: Record<string, unknown> | undefined): AgentMessage {
+  const savedPaths = (message.details as { savedPaths?: unknown } | undefined)?.savedPaths;
+  const paths = Array.isArray(savedPaths)
+    ? savedPaths.filter((path): path is string => typeof path === "string")
+    : typeof args?.path === "string" ? [args.path] : [];
+  const note = paths.length
+    ? `[Older image omitted from active context. Read it again if needed: ${paths.join(", ")}]`
+    : "[Older image omitted from active context.]";
+  let noted = false;
+  const content = message.content.flatMap((part) => {
+    if (part.type !== "image") return [part];
+    if (noted) return [];
+    noted = true;
+    return [{ type: "text" as const, text: note }];
+  });
+  return { ...message, content };
 }
 
 function transformWorkingContext(messages: AgentMessage[]): AgentMessage[] {
-  const commands = bashCommands(messages);
+  const calls = toolCallArguments(messages);
   // Trailing tool results are the ones the model is about to read; keep them whole.
   let firstRecent = messages.length;
   while (firstRecent > 0 && messages[firstRecent - 1]?.role === "toolResult") firstRecent--;
@@ -248,6 +265,9 @@ function transformWorkingContext(messages: AgentMessage[]): AgentMessage[] {
       };
     }
     if (message.role !== "toolResult") return message;
+    if (index < firstRecent && message.content.some((part) => part.type === "image")) {
+      return omitImages(message, calls.get(message.toolCallId));
+    }
     const text = messageText(message);
     const details = message.details as { contextEfficiency?: SearchDetails; matchLimitReached?: unknown } | undefined;
     const search = details?.contextEfficiency;
@@ -267,10 +287,10 @@ function transformWorkingContext(messages: AgentMessage[]): AgentMessage[] {
       return message;
     }
     if (index < firstRecent && STALE_TOOLS.has(message.toolName) && utf8Bytes(text) > STALE_TOOL_MAX_BYTES) {
-      const command = commands.get(message.toolCallId);
+      const command = calls.get(message.toolCallId)?.command;
       return replaceTextContent(
         message,
-        `[Older ${message.toolName} result omitted from active context.${command ? `\nCommand: ${command}` : ""}\nStatus: ${message.isError ? "failed" : "succeeded"}\nFull raw result remains in session history. Rerun the command or search if exact output is needed.]`,
+        `[Older ${message.toolName} result omitted from active context.${typeof command === "string" ? `\nCommand: ${command}` : ""}\nStatus: ${message.isError ? "failed" : "succeeded"}\nFull raw result remains in session history. Rerun the command or search if exact output is needed.]`,
       );
     }
     return message;
