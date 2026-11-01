@@ -23,7 +23,7 @@ Install mise and activate it in Bash:
 ```sh
 curl -fsSL https://mise.run | sh
 eval "$("$HOME/.local/bin/mise" activate bash)"
-mise use --global node@22.23.3 bun@1.4.2
+mise use --global node@22.23.3 bun@1.4.2 sd@1.0.0
 ```
 
 Install the coding agents with mise's Node/npm:

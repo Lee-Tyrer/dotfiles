@@ -116,7 +116,7 @@ if ! installed uv '0.12.19'; then
   install -m 755 "$tmp/uv/uv-x86_64-unknown-linux-gnu/uv" "$HOME/.local/bin/uv"
   install -m 755 "$tmp/uv/uv-x86_64-unknown-linux-gnu/uvx" "$HOME/.local/bin/uvx"
 fi
-"$HOME/.local/bin/mise" use --global node@22.23.3 bun@1.4.2
+"$HOME/.local/bin/mise" use --global node@22.23.3 bun@1.4.2 sd@1.0.0
 "$HOME/.local/bin/uv" python install 3.12.6
 
 say 'Install Pi and Codex via the managed Node runtime'
