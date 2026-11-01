@@ -14,14 +14,6 @@ previous_workspace = "ctrl+shift+tab"
 # Inspection popups. Each opens over the current pane in its working directory
 # and closes when the command exits.
 [[keys.command]]
-key = "prefix+alt+g"
-type = "popup"
-command = "lazygit"
-description = "lazygit"
-width = "90%"
-height = "90%"
-
-[[keys.command]]
 key = "prefix+alt+d"
 type = "popup"
 # Same review as Pi's /diff; on q, comments are sent to the agent in the focused pane.
