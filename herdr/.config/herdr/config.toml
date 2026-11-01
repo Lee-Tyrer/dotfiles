@@ -11,6 +11,13 @@ focus_pane_right = "prefix+ctrl+l"
 [ui]
 status_indicators = "symbols"
 
+# $num is reported by the lee.space-numbers plugin as "<prefix+N> <label>".
+[ui.sidebar.spaces]
+rows = [
+  ["state_icon", { token = "$num", bold = true }],
+  ["branch", "git_status"],
+]
+
 [ui.sound]
 enabled = false
 
