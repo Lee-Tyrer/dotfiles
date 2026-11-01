@@ -9,9 +9,11 @@ import type {
   Theme,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { readdir, stat } from "node:fs/promises";
-import { homedir } from "node:os";
-import { dirname, relative, resolve } from "node:path";
+import { execFile } from "node:child_process";
+import { mkdtemp, readdir, stat, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
+import { dirname, join, relative, resolve } from "node:path";
+import { promisify } from "node:util";
 import {
   createBashTool,
   createFindTool,
@@ -27,6 +29,8 @@ const GREP_MAX_BYTES = 8 * 1024;
 const GREP_DEFAULT_LIMIT = 40;
 const FIND_MAX_BYTES = 5 * 1024;
 const FIND_DEFAULT_LIMIT = 100;
+const BASH_HEAD_BYTES = 4 * 1024;
+const BASH_TAIL_BYTES = 12 * 1024;
 const STALE_TOOL_MAX_BYTES = 8 * 1024;
 const MAX_GREP_CONTEXT = 2;
 const PATH_HINT_MAX_ENTRIES = 32;
@@ -92,8 +96,62 @@ function truncateCompleteLines(text: string, maxBytes: number): string {
   return kept.join("\n");
 }
 
-function isExcludedResultPath(resultPath: string): boolean {
-  return resultPath.split("/").some((part) => EXCLUDED_DIRECTORIES.includes(part));
+function truncateCompleteLinesFromEnd(text: string, maxBytes: number): string {
+  const kept: string[] = [];
+  let bytes = 0;
+  const lines = text.split("\n");
+  for (let index = lines.length - 1; index >= 0; index--) {
+    const lineBytes = utf8Bytes(lines[index]!) + (kept.length === 0 ? 0 : 1);
+    if (bytes + lineBytes > maxBytes) break;
+    kept.unshift(lines[index]!);
+    bytes += lineBytes;
+  }
+  return kept.join("\n");
+}
+
+// Keep the start (command echo, first error) and the end (summary, exit status) of long output.
+// Pi's own temp file holds the full output when it truncated; otherwise save the text ourselves.
+async function compactShellText(text: string): Promise<string> {
+  if (utf8Bytes(text) <= BASH_HEAD_BYTES + BASH_TAIL_BYTES) return text;
+  let fullOutputPath = /Full output: (\S+)\]/.exec(text)?.[1];
+  if (!fullOutputPath) {
+    fullOutputPath = join(await mkdtemp(join(tmpdir(), "pi-bash-")), "output.txt");
+    await writeFile(fullOutputPath, text);
+  }
+  const head = truncateCompleteLines(text, BASH_HEAD_BYTES);
+  // A single huge final line would leave no tail; fall back to its last characters.
+  const tail = truncateCompleteLinesFromEnd(text, BASH_TAIL_BYTES) || text.slice(-BASH_TAIL_BYTES / 4);
+  const omitted = text.split("\n").length - countAllLines(head) - countAllLines(tail);
+  return `${head}\n\n[… ${plural(omitted, "line")} omitted. Full output: ${fullOutputPath}]\n\n${tail}`;
+}
+
+function countAllLines(text: string): number {
+  return text === "" ? 0 : text.split("\n").length;
+}
+
+const execFileAsync = promisify(execFile);
+
+async function insideGitRepo(path: string): Promise<boolean> {
+  for (let current = path; ; current = dirname(current)) {
+    if (await stat(join(current, ".git")).then(() => true, () => false)) return true;
+    if (dirname(current) === current) return false;
+  }
+}
+
+// Mirrors pi's built-in fd invocation, but excludes generated directories inside fd so they
+// do not use up the result limit.
+async function globExcludingGenerated(pattern: string, searchPath: string, options: { limit: number }): Promise<string[]> {
+  const args = ["--glob", "--color=never", "--hidden", "--max-results", String(options.limit)];
+  for (const directory of EXCLUDED_DIRECTORIES) args.push("--exclude", directory);
+  if (!(await insideGitRepo(searchPath))) args.push("--no-require-git");
+  let effectivePattern = pattern;
+  if (pattern.includes("/")) {
+    args.push("--full-path");
+    if (!pattern.startsWith("/") && !pattern.startsWith("**/") && pattern !== "**") effectivePattern = `**/${pattern}`;
+  }
+  args.push("--", effectivePattern, searchPath);
+  const { stdout } = await execFileAsync("fd", args, { maxBuffer: 16 * 1024 * 1024 });
+  return stdout.split("\n").filter((line) => line !== "");
 }
 
 interface GrepOutputLine {
@@ -202,14 +260,11 @@ function transformWorkingContext(messages: AgentMessage[]): AgentMessage[] {
       return merged.text === text ? message : replaceTextContent(message, merged.text);
     }
     if (search?.kind === "find") {
-      const filtered = search.generic
-        ? text.split("\n").filter((line) => !isExcludedResultPath(line)).join("\n")
-        : text;
-      if (utf8Bytes(filtered) > FIND_MAX_BYTES) {
-        const bounded = truncateCompleteLines(filtered, FIND_MAX_BYTES - 256);
+      if (utf8Bytes(text) > FIND_MAX_BYTES) {
+        const bounded = truncateCompleteLines(text, FIND_MAX_BYTES - 256);
         return replaceTextContent(message, `${bounded}\n\n[Find output limited to 5KB. Refine the path or glob. Full raw result remains in session history.]`);
       }
-      return filtered === text ? message : replaceTextContent(message, filtered);
+      return message;
     }
     if (index < firstRecent && STALE_TOOLS.has(message.toolName) && utf8Bytes(text) > STALE_TOOL_MAX_BYTES) {
       const command = commands.get(message.toolCallId);
@@ -229,6 +284,12 @@ function createTools(cwd: string) {
   return {
     bash: createBashTool(cwd, { commandPrefix: MODERN_TOOL_PATH_PREFIX }),
     find: createFindTool(cwd),
+    findExcludingGenerated: createFindTool(cwd, {
+      operations: {
+        exists: (path: string) => stat(path).then(() => true, () => false),
+        glob: globExcludingGenerated,
+      },
+    }),
     grep: createGrepTool(cwd),
     ls: createLsTool(cwd),
     read: createReadTool(cwd),
@@ -369,7 +430,16 @@ export default function (pi: ExtensionAPI) {
     parameters: initial.bash.parameters,
     renderShell: "self",
     async execute(id, params, signal, onUpdate, ctx) {
-      return getTools(ctx.cwd).bash.execute(id, params, signal, onUpdate);
+      let result;
+      try {
+        result = await getTools(ctx.cwd).bash.execute(id, params, signal, onUpdate);
+      } catch (error) {
+        // Non-zero exits, timeouts, and aborts arrive as errors carrying the output.
+        throw new Error(await compactShellText(errorText(error)));
+      }
+      const content = await Promise.all(result.content.map(async (part) =>
+        part.type === "text" ? { ...part, text: await compactShellText(part.text) } : part));
+      return { ...result, content };
     },
     renderCall(args, theme) {
       const command = (args.command || "…").replace(/\s+/g, " ").trim();
@@ -392,8 +462,10 @@ export default function (pi: ExtensionAPI) {
     renderShell: "self",
     async execute(id, params, signal, onUpdate, ctx) {
       const effectiveParams = { ...params, limit: Math.max(1, params.limit ?? FIND_DEFAULT_LIMIT) };
+      const tools = getTools(ctx.cwd);
+      const find = params.path === undefined ? tools.findExcludingGenerated : tools.find;
       const result = await withPathHint(params.path, ctx.cwd, () =>
-        getTools(ctx.cwd).find.execute(id, effectiveParams, signal, onUpdate));
+        find.execute(id, effectiveParams, signal, onUpdate));
       const contextEfficiency: SearchDetails = {
         kind: "find",
         query: params.pattern,
