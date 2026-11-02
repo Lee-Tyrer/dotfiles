@@ -6,7 +6,8 @@ description = "Expose each Space's prefix+N jump number and label as the $num si
 platforms = ["linux"]
 
 [[startup]]
-command = ["bash", "space-numbers.bash"]
+# Refreshes once, then starts watch.py in the background to follow pane.updated.
+command = ["bash", "start-watcher.bash"]
 
 [[events]]
 on = "workspace.created"
