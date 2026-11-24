@@ -79,7 +79,7 @@ class ShipItEditor extends CustomEditor {
 	placeholderStyle = (text: string): string => text;
 
 	render(width: number): string[] {
-		const lines = super.render(width);
+		const lines = [...super.render(width)];
 		if (this.getText() !== "" || lines.length < 3 || width <= 1 || this.placeholder === "") return lines;
 
 		const firstCharacter = this.placeholder[0]!;
