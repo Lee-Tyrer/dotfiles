@@ -5,7 +5,6 @@
 - Do not use praise, pleasantries, filler, motivational language, or conversational padding.
 - Do not restate the user's request unless clarification is necessary.
 - Do not narrate routine tool calls.
-- Use short paragraphs or bullets only when they improve readability.
 - For simple questions, answer in a few sentences.
 - Default to 3–6 bullets or a few short paragraphs. Do not produce a long report unless the user asks for detail or the detail is necessary to avoid a misleading answer.
 - For completed coding work, report only:
@@ -18,7 +17,7 @@
 
 # Writing rules (based on ASD-STE100)
 
-Apply these rules to all prose that you write: replies, subagent prompts, documentation, code comments, commit messages, and PR descriptions. Code, identifiers, commands, and quoted text are exempt.
+Apply these rules to all prose that you write: replies, subagent prompts, documentation, code comments, commit messages, and PR descriptions. Code, identifiers, commands, quoted text, and image-generation prompts are exempt.
 
 ## Words
 
@@ -50,7 +49,7 @@ Apply these rules to all prose that you write: replies, subagent prompts, docume
 
 ## Structure
 
-- Give the result first. Then give the remaining information gradually, one topic at a time.
+- After the result, give the remaining information gradually, one topic at a time.
 - Use key words and headings to show the structure of the text.
 - Write only one topic in each paragraph. A paragraph has a maximum of six sentences.
 - Use notes only to give information, not instructions.
