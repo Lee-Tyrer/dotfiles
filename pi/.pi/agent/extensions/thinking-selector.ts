@@ -5,6 +5,21 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { ThinkingSelectorComponent, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 
+/** Filters levels by name prefix, so "hi" matches "high" but not "xhigh". */
+class PrefixThinkingSelector extends ThinkingSelectorComponent {
+  applyFilter(query: string) {
+    const self = this as any;
+    const q = query.trim().toLowerCase();
+    const filtered = q
+      ? self.allItems.filter((item: { value: string }) => item.value.toLowerCase().startsWith(q))
+      : self.allItems;
+    const selectedValue = self.selectList.getSelectedItem()?.value;
+    const newList = self.buildSelectList(filtered, selectedValue);
+    self.children[self.selectListChildIndex] = newList;
+    self.selectList = newList;
+  }
+}
+
 export default function thinkingSelector(pi: ExtensionAPI) {
   const openSelector = async (ctx: ExtensionContext) => {
     if (!ctx.hasUI) return;
@@ -17,7 +32,7 @@ export default function thinkingSelector(pi: ExtensionAPI) {
 
     const levels = getSupportedThinkingLevels(model);
     const selected = await ctx.ui.custom<ThinkingLevel | null>((_tui, _theme, _keybindings, done) => {
-      return new ThinkingSelectorComponent(
+      return new PrefixThinkingSelector(
         pi.getThinkingLevel(),
         levels,
         (level) => done(level),
